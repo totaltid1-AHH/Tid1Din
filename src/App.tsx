@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { Header } from './components/common/Header';
+import { Sidebar } from './components/common/Sidebar';
 import { TwoFactorModal } from './components/auth/TwoFactorModal';
 import { LoginView } from './components/auth/LoginView';
 import { CalendarView } from './components/calendar/CalendarView';
@@ -39,14 +39,15 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
+    <div className="min-h-screen bg-slate-50 flex flex-col justify-between md:pl-64">
       <TwoFactorModal />
       
-      <div className="w-full">
-        <Header currentTab={currentTab} setCurrentTab={setCurrentTab} />
+      {/* Svart sidefeltmeny (venstre side på desktop, topplinje + skuff på mobil) */}
+      <Sidebar currentTab={currentTab} setCurrentTab={setCurrentTab} />
 
+      <div className="w-full flex-1">
         {/* Mobil: full bredde (w-full, px-0), Desktop: max-w-7xl px-4. Padding i bunn sikrer at innhold ikke havner under den faste menyen */}
-        <main className="w-full max-w-full sm:max-w-7xl sm:mx-auto px-0 sm:px-4 lg:px-8 py-0 sm:py-6 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:pb-8">
+        <main className="w-full max-w-full md:max-w-7xl md:mx-auto px-0 sm:px-4 lg:px-8 py-0 sm:py-6 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] md:pb-8">
           {/* Fanevelging basert på aktiv fane og rolle */}
           {currentTab === 'calendar' && (
             <CalendarView />

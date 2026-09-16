@@ -4,6 +4,7 @@ import { dbService } from '../../services/db';
 import { Appointment, UserProfile } from '../../types';
 import { maskPersonalInfo } from '../../utils/crypto';
 import { JournalModal } from '../journal/JournalModal';
+import { AppointmentSmsModal } from '../appointments/AppointmentSmsModal';
 import { 
   Calendar, 
   Clock, 
@@ -15,7 +16,8 @@ import {
   MapPin, 
   Phone, 
   UserCheck, 
-  EyeOff 
+  EyeOff,
+  MessageSquare
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { nb } from 'date-fns/locale';
@@ -30,7 +32,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToCale
   const [clients, setClients] = useState<UserProfile[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedJournalClient, setSelectedJournalClient] = useState<UserProfile | null>(null);
+  const [selectedJournalAppointment, setSelectedJournalAppointment] = useState<Appointment | null>(null);
   const [isJournalOpen, setIsJournalOpen] = useState(false);
+
+  // SMS & Timeombooking modal state
+  const [smsModalAppointment, setSmsModalAppointment] = useState<Appointment | null>(null);
+  const [smsModalClient, setSmsModalClient] = useState<UserProfile | null>(null);
+  const [smsModalTab, setSmsModalTab] = useState<'delay' | 'reschedule' | 'templates'>('delay');
+  const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
 
   const canViewName = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientName !== false;
   const canViewPhone = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientPhone !== false;
@@ -57,12 +66,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToCale
     await loadData();
   };
 
-  const handleOpenJournalForClient = (clientId: string) => {
+  const handleOpenJournalForClient = (clientId: string, apt?: Appointment) => {
     const client = clients.find(c => c.uid === clientId);
     if (client) {
       setSelectedJournalClient(client);
+      setSelectedJournalAppointment(apt || null);
       setIsJournalOpen(true);
     }
+  };
+
+  const handleOpenSmsModal = (apt: Appointment, tab: 'delay' | 'reschedule' | 'templates' = 'delay') => {
+    const client = clients.find(c => c.uid === apt.clientId) || null;
+    setSmsModalAppointment(apt);
+    setSmsModalClient(client);
+    setSmsModalTab(tab);
+    setIsSmsModalOpen(true);
   };
 
   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -207,23 +225,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToCale
                   </div>
 
                   <div className="flex items-center justify-between pt-1.5 border-t border-slate-200 text-xs">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       {canEditJournals && (
                         <button
-                          onClick={() => handleOpenJournalForClient(apt.clientId)}
-                          className="px-2.5 py-1 rounded-lg bg-sky-50 text-sky-700 font-semibold text-[11px] flex items-center gap-1"
+                          onClick={() => handleOpenJournalForClient(apt.clientId, apt)}
+                          className="px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 font-semibold text-[11px] flex items-center gap-1 transition-colors border border-sky-100"
                         >
                           <FileText className="w-3 h-3" />
                           Journal
                         </button>
                       )}
 
+                      <button
+                        onClick={() => handleOpenSmsModal(apt, 'delay')}
+                        className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-[11px] flex items-center gap-1 transition-colors border border-amber-200 shadow-2xs"
+                        title="Send forsinkelses-SMS (+15 min) eller ombook time"
+                      >
+                        <MessageSquare className="w-3 h-3 text-amber-600" />
+                        Varsle / Flytt
+                      </button>
+
                       {apt.isOnline && apt.meetingLink && (
                         <a
                           href={apt.meetingLink}
                           target="_blank"
                           rel="noreferrer"
-                          className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-semibold text-[11px] flex items-center gap-1"
+                          className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold text-[11px] flex items-center gap-1 transition-colors border border-indigo-100"
                         >
                           <Video className="w-3 h-3" />
                           Møterom
@@ -303,14 +330,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToCale
                       </span>
                     </td>
                     <td className="py-2.5 px-3 text-right">
-                      {canEditJournals && (
+                      <div className="flex items-center justify-end gap-1.5">
+                        {canEditJournals && (
+                          <button
+                            onClick={() => handleOpenJournalForClient(apt.clientId, apt)}
+                            className="px-2 py-1 rounded bg-sky-50 text-sky-700 hover:bg-sky-100 font-semibold text-[11px] transition-colors border border-sky-100"
+                          >
+                            Journal
+                          </button>
+                        )}
                         <button
-                          onClick={() => handleOpenJournalForClient(apt.clientId)}
-                          className="px-2 py-1 rounded bg-sky-50 text-sky-700 font-semibold text-[11px]"
+                          onClick={() => handleOpenSmsModal(apt, 'reschedule')}
+                          className="px-2 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 font-semibold text-[11px] flex items-center gap-1 transition-colors border border-slate-200"
+                          title="Send SMS eller ombook time"
                         >
-                          Journal
+                          <MessageSquare className="w-3 h-3 text-slate-500" />
+                          Varsle / Flytt
                         </button>
-                      )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -324,8 +361,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToCale
       {selectedJournalClient && (
         <JournalModal
           client={selectedJournalClient}
+          appointment={selectedJournalAppointment}
           isOpen={isJournalOpen}
-          onClose={() => { setIsJournalOpen(false); setSelectedJournalClient(null); }}
+          onClose={() => { 
+            setIsJournalOpen(false); 
+            setSelectedJournalClient(null); 
+            setSelectedJournalAppointment(null);
+          }}
+        />
+      )}
+
+      {/* SMS & Timeombooking Modal */}
+      {isSmsModalOpen && (
+        <AppointmentSmsModal
+          isOpen={isSmsModalOpen}
+          onClose={() => {
+            setIsSmsModalOpen(false);
+            setSmsModalAppointment(null);
+            setSmsModalClient(null);
+          }}
+          appointment={smsModalAppointment}
+          client={smsModalClient}
+          initialTab={smsModalTab}
+          onAppointmentUpdated={() => {
+            loadData();
+          }}
         />
       )}
 

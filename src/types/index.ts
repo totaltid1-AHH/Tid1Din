@@ -119,6 +119,17 @@ export interface JournalEntry {
   lastModifiedBy: string;
   lastModifiedById: string;
   revisionHistory: JournalRevision[];
+  appointmentId?: string;
+  sessionDate?: string; // YYYY-MM-DD
+  sessionTime?: string; // HH:mm
+}
+
+export interface SmsTemplate {
+  id: string;
+  title: string;
+  message: string;
+  category?: 'delay' | 'reschedule' | 'info' | 'custom';
+  isDefault?: boolean;
 }
 
 export interface SmsSettings {
@@ -139,7 +150,7 @@ export interface SmsLog {
   recipientPhone: string;
   message: string;
   status: 'sent' | 'failed' | 'simulated';
-  type: 'booking' | 'reminder1' | 'reminder2' | 'cancellation';
+  type: 'booking' | 'reminder1' | 'reminder2' | 'cancellation' | 'delay' | 'reschedule' | 'custom';
   appointmentId?: string;
   response?: string;
 }

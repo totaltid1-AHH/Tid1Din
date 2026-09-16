@@ -72,6 +72,21 @@ export const SuperAdminPanel: React.FC = () => {
   const [newAdminName, setNewAdminName] = useState('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
 
+  // Redigering av terapeut
+  const [editingTherapist, setEditingTherapist] = useState<UserProfile | null>(null);
+  const [isEditTherapistOpen, setIsEditTherapistOpen] = useState(false);
+  const [editTherapistName, setEditTherapistName] = useState('');
+  const [editTherapistEmail, setEditTherapistEmail] = useState('');
+  const [editTherapistPhone, setEditTherapistPhone] = useState('');
+  const [editTherapistIsActive, setEditTherapistIsActive] = useState(true);
+  const [editTherapistPerms, setEditTherapistPerms] = useState<AdminPermissions>({
+    canViewClientName: true,
+    canViewClientPhone: true,
+    canViewClientEmail: true,
+    canEditJournals: true,
+    canManageAppointments: true
+  });
+
   // Ferie & Fravær tilstand
   const [isAddingHoliday, setIsAddingHoliday] = useState(false);
   const [newHolidayTitle, setNewHolidayTitle] = useState('');
@@ -176,6 +191,60 @@ export const SuperAdminPanel: React.FC = () => {
     await dbService.saveUser(updatedUser);
     setUsers(users.map(u => u.uid === therapistUid ? updatedUser : u));
     setSaveSuccessMessage(`Permisjon avsluttet for ${formatTherapistName(userToUpdate.displayName)}!`);
+    setTimeout(() => setSaveSuccessMessage(null), 2500);
+  };
+
+  const handleOpenEditTherapist = (therapist: UserProfile) => {
+    setEditingTherapist(therapist);
+    setEditTherapistName(therapist.displayName);
+    setEditTherapistEmail(therapist.email);
+    setEditTherapistPhone(therapist.phone || '');
+    setEditTherapistIsActive(therapist.isActive !== false);
+    setEditTherapistPerms(therapist.permissions || {
+      canViewClientName: true,
+      canViewClientPhone: true,
+      canViewClientEmail: true,
+      canEditJournals: true,
+      canManageAppointments: true
+    });
+    setIsEditTherapistOpen(true);
+  };
+
+  const handleSaveTherapist = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTherapist) return;
+    const updatedUser: UserProfile = {
+      ...editingTherapist,
+      displayName: editTherapistName.trim(),
+      email: editTherapistEmail.trim(),
+      phone: editTherapistPhone.trim(),
+      isActive: editTherapistIsActive,
+      ...(editingTherapist.role === 'admin' ? { permissions: editTherapistPerms } : {})
+    };
+    await dbService.saveUser(updatedUser);
+    setUsers(users.map(u => u.uid === editingTherapist.uid ? updatedUser : u));
+    setIsEditTherapistOpen(false);
+    setEditingTherapist(null);
+    setSaveSuccessMessage(`Endringer for ${formatTherapistName(updatedUser.displayName)} ble lagret!`);
+    setTimeout(() => setSaveSuccessMessage(null), 2500);
+  };
+
+  const handleToggleTherapistActive = async (therapistUid: string) => {
+    const therapist = users.find(u => u.uid === therapistUid);
+    if (!therapist) return;
+    const newActiveState = therapist.isActive === false;
+    const updatedUser: UserProfile = {
+      ...therapist,
+      isActive: newActiveState,
+      ...(newActiveState ? { leaveStartDate: undefined, leaveEndDate: undefined } : {})
+    };
+    await dbService.saveUser(updatedUser);
+    setUsers(users.map(u => u.uid === therapistUid ? updatedUser : u));
+    setSaveSuccessMessage(
+      newActiveState
+        ? `${formatTherapistName(therapist.displayName)} er nå aktivert!`
+        : `${formatTherapistName(therapist.displayName)} er nå deaktivert!`
+    );
     setTimeout(() => setSaveSuccessMessage(null), 2500);
   };
 
@@ -398,7 +467,7 @@ export const SuperAdminPanel: React.FC = () => {
     setTimeout(() => setTestStatus(null), 4000);
   };
 
-  const adminList = users.filter(u => u.role === 'admin');
+  const therapistList = users.filter(u => u.role === 'admin' || u.role === 'hovedadmin');
 
   return (
     <div className="space-y-2.5 sm:space-y-5 w-full">
@@ -415,7 +484,7 @@ export const SuperAdminPanel: React.FC = () => {
 
           {saveSuccessMessage && (
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-xs font-semibold self-start sm:self-center">
-              <Check className="w-3.5 h-3.5" />
+              <Check className="w-3.5 h-3.5 text-emerald-600" />
               {saveSuccessMessage}
             </span>
           )}
@@ -440,8 +509,8 @@ export const SuperAdminPanel: React.FC = () => {
             }`}
           >
             <Users className="w-3.5 h-3.5" />
-            <span className="sm:hidden">Personell ({adminList.length})</span>
-            <span className="hidden sm:inline">Terapeuter & Administratorer ({adminList.length})</span>
+            <span className="sm:hidden">Personell ({therapistList.length})</span>
+            <span className="hidden sm:inline">Terapeuter & Administratorer ({therapistList.length})</span>
           </button>
 
           {currentUser?.role === 'hovedadmin' && (
@@ -458,130 +527,191 @@ export const SuperAdminPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* FANE: ADMINS */}
+      {/* FANE: TERAPEUTER & PERSONELL (KOLONNEBASERT TABELL) */}
       {activeSubTab === 'admins' && (
-        <div className="bg-white rounded-none sm:rounded-2xl p-3 sm:p-5 border-y sm:border border-slate-200 shadow-xs space-y-3 w-full">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-            <h2 className="text-xs sm:text-sm font-bold text-slate-900">Tilgang for Administratorer</h2>
+        <div className="bg-white rounded-none sm:rounded-2xl p-3 sm:p-5 border-y sm:border border-slate-200 shadow-xs space-y-4 w-full">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+            <div>
+              <h2 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+                <Users className="w-4.5 h-4.5 text-sky-600" />
+                Terapeutliste & Personell
+              </h2>
+              <p className="text-xs text-slate-500">
+                Oversikt over klinikkens behandlere og administratorer med status og tilgangsrettigheter.
+              </p>
+            </div>
             <button
               onClick={() => setIsNewAdminOpen(true)}
-              className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-bold flex items-center gap-1"
+              className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors self-start sm:self-center cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
-              Ny admin
+              <span>Ny terapeut / admin</span>
             </button>
           </div>
 
-          <div className="space-y-3">
-            {adminList.map((admin) => {
-              const perms = admin.permissions || {
-                canViewClientName: false,
-                canViewClientPhone: false,
-                canViewClientEmail: false,
-                canEditJournals: true,
-                canManageAppointments: true
-              };
+          {/* Kolonnebasert tabellvisning */}
+          <div className="overflow-x-auto max-w-full -mx-3 sm:mx-0">
+            <table className="w-full text-left text-xs text-slate-600 min-w-[700px]">
+              <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] border-y border-slate-200">
+                <tr>
+                  <th className="py-3 px-4">Terapeut / Navn</th>
+                  <th className="py-3 px-3">Telefon</th>
+                  <th className="py-3 px-3">Status</th>
+                  <th className="py-3 px-3">Tilganger & Innsyn</th>
+                  <th className="py-3 px-4 text-right">Handlinger</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {therapistList.map((therapist) => {
+                  const isMainAdmin = therapist.role === 'hovedadmin';
+                  const isDeactivated = therapist.isActive === false;
+                  const onLeave = isTherapistOnLeave(therapist);
+                  const perms = therapist.permissions || {
+                    canViewClientName: true,
+                    canViewClientPhone: true,
+                    canViewClientEmail: true,
+                    canEditJournals: true,
+                    canManageAppointments: true
+                  };
 
-              return (
-                <div key={admin.uid} className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-bold text-slate-900 text-xs sm:text-sm">{admin.displayName}</p>
-                        {isTherapistOnLeave(admin) && (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
+                  return (
+                    <tr key={therapist.uid} className={`hover:bg-slate-50/80 transition-colors ${isDeactivated ? 'bg-slate-50/50 opacity-75' : ''}`}>
+                      {/* Navn & Rolle */}
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs flex-shrink-0 ${
+                            isMainAdmin ? 'bg-indigo-100 text-indigo-800' : 'bg-sky-100 text-sky-800'
+                          }`}>
+                            <User className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-slate-900 text-sm">{therapist.displayName}</span>
+                              <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                                isMainAdmin ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' : 'bg-slate-100 text-slate-700 border border-slate-200'
+                              }`}>
+                                {isMainAdmin ? 'Hovedadmin' : 'Terapeut'}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-slate-400 block">{therapist.email}</span>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Telefon */}
+                      <td className="py-3 px-3 font-mono text-slate-700">
+                        {therapist.phone || <span className="text-slate-400 italic">Ikke oppgitt</span>}
+                      </td>
+
+                      {/* Status */}
+                      <td className="py-3 px-3">
+                        {isDeactivated ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-600"></span>
+                            Deaktivert
+                          </span>
+                        ) : onLeave ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200" title={`Permisjon: ${therapist.leaveStartDate} til ${therapist.leaveEndDate}`}>
                             <UserX className="w-3 h-3 text-amber-700" />
-                            I permisjon {admin.leaveStartDate && admin.leaveEndDate ? `(${admin.leaveStartDate} – ${admin.leaveEndDate})` : ''}
+                            I permisjon
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                            Aktiv
                           </span>
                         )}
-                      </div>
-                      <p className="text-[11px] text-slate-500">{admin.email}</p>
-                    </div>
+                      </td>
 
-                    <div className="flex items-center gap-1.5">
-                      {isTherapistOnLeave(admin) ? (
-                        <>
+                      {/* Tilganger */}
+                      <td className="py-3 px-3">
+                        {isMainAdmin ? (
+                          <span className="text-[11px] font-semibold text-indigo-700">Full klinikk-tilgang</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            <span className={`px-1.5 py-0.2 rounded text-[10px] font-medium ${
+                              perms.canViewClientName ? 'bg-sky-50 text-sky-700 border border-sky-200' : 'bg-slate-100 text-slate-400 line-through'
+                            }`}>
+                              Navn
+                            </span>
+                            <span className={`px-1.5 py-0.2 rounded text-[10px] font-medium ${
+                              perms.canViewClientPhone ? 'bg-sky-50 text-sky-700 border border-sky-200' : 'bg-slate-100 text-slate-400 line-through'
+                            }`}>
+                              Telefon
+                            </span>
+                            <span className={`px-1.5 py-0.2 rounded text-[10px] font-medium ${
+                              perms.canEditJournals ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-400 line-through'
+                            }`}>
+                              Journal
+                            </span>
+                            <span className={`px-1.5 py-0.2 rounded text-[10px] font-medium ${
+                              perms.canManageAppointments ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-400 line-through'
+                            }`}>
+                              Timeavtaler
+                            </span>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Handlinger */}
+                      <td className="py-3 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                          {/* Rediger knapp */}
                           <button
                             type="button"
-                            onClick={() => handleEndLeave(admin.uid)}
-                            className="px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer shadow-2xs bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600"
+                            onClick={() => handleOpenEditTherapist(therapist)}
+                            className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold text-xs flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                            title="Rediger terapeut"
                           >
-                            Avslutt permisjon
+                            <Edit2 className="w-3.5 h-3.5 text-sky-600" />
+                            <span>Rediger</span>
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenLeaveModal(admin.uid)}
-                            className="px-2 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer shadow-2xs bg-white hover:bg-slate-50 text-slate-700 border-slate-300"
-                          >
-                            Endre datoer
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenLeaveModal(admin.uid)}
-                          className="px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer shadow-2xs bg-white hover:bg-amber-50 text-amber-800 border-amber-300"
-                        >
-                          Sett i permisjon
-                        </button>
-                      )}
-                    </div>
-                  </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
-                    <label className="flex items-center gap-1.5 p-2 rounded-lg bg-white border border-slate-200 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={perms.canViewClientName}
-                        onChange={() => handleToggleAdminPermission(admin.uid, 'canViewClientName')}
-                        className="rounded text-indigo-600"
-                      />
-                      <span className="text-[11px]">Se navn</span>
-                    </label>
+                          {/* Deaktiver / Aktiver knapp */}
+                          {!isMainAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleTherapistActive(therapist.uid)}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer shadow-2xs ${
+                                isDeactivated
+                                  ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                                  : 'bg-white hover:bg-rose-50 text-rose-700 border-rose-200'
+                              }`}
+                              title={isDeactivated ? 'Aktiver terapeut for bestilling' : 'Deaktiver terapeut'}
+                            >
+                              {isDeactivated ? 'Aktiver' : 'Deaktiver'}
+                            </button>
+                          )}
 
-                    <label className="flex items-center gap-1.5 p-2 rounded-lg bg-white border border-slate-200 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={perms.canViewClientPhone}
-                        onChange={() => handleToggleAdminPermission(admin.uid, 'canViewClientPhone')}
-                        className="rounded text-indigo-600"
-                      />
-                      <span className="text-[11px]">Se telefon</span>
-                    </label>
-
-                    <label className="flex items-center gap-1.5 p-2 rounded-lg bg-white border border-slate-200 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={perms.canViewClientEmail}
-                        onChange={() => handleToggleAdminPermission(admin.uid, 'canViewClientEmail')}
-                        className="rounded text-indigo-600"
-                      />
-                      <span className="text-[11px]">Se e-post</span>
-                    </label>
-
-                    <label className="flex items-center gap-1.5 p-2 rounded-lg bg-white border border-slate-200 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={perms.canEditJournals}
-                        onChange={() => handleToggleAdminPermission(admin.uid, 'canEditJournals')}
-                        className="rounded text-indigo-600"
-                      />
-                      <span className="text-[11px]">Journaler</span>
-                    </label>
-
-                    <label className="flex items-center gap-1.5 p-2 rounded-lg bg-white border border-slate-200 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={perms.canManageAppointments}
-                        onChange={() => handleToggleAdminPermission(admin.uid, 'canManageAppointments')}
-                        className="rounded text-indigo-600"
-                      />
-                      <span className="text-[11px]">Timeavtaler</span>
-                    </label>
-                  </div>
-                </div>
-              );
-            })}
+                          {/* Permisjon */}
+                          {!isDeactivated && (
+                            onLeave ? (
+                              <button
+                                type="button"
+                                onClick={() => handleEndLeave(therapist.uid)}
+                                className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600 transition-colors cursor-pointer"
+                                title="Avslutt permisjon"
+                              >
+                                Avslutt perm.
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenLeaveModal(therapist.uid)}
+                                className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-white hover:bg-amber-50 text-amber-800 border border-amber-300 transition-colors cursor-pointer"
+                                title="Sett terapeut i permisjon"
+                              >
+                                Permisjon
+                              </button>
+                            )
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -1694,6 +1824,160 @@ export const SuperAdminPanel: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* MODAL FOR Å REDIGERE TERAPEUT */}
+      {isEditTherapistOpen && editingTherapist && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="relative w-full max-w-lg bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 p-5 sm:p-7 space-y-4 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center">
+                  <Edit2 className="w-4.5 h-4.5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Rediger terapeut</h3>
+                  <p className="text-xs text-slate-500">{editingTherapist.displayName}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditTherapistOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTherapist} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Navn *</label>
+                <input
+                  type="text"
+                  required
+                  value={editTherapistName}
+                  onChange={(e) => setEditTherapistName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">E-post *</label>
+                  <input
+                    type="email"
+                    required
+                    value={editTherapistEmail}
+                    onChange={(e) => setEditTherapistEmail(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Telefon</label>
+                  <input
+                    type="tel"
+                    value={editTherapistPhone}
+                    onChange={(e) => setEditTherapistPhone(e.target.value)}
+                    placeholder="98822000"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  />
+                </div>
+              </div>
+
+              {/* Status bryter */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-slate-800">Aktiv behandler</p>
+                  <p className="text-[11px] text-slate-500">Deaktiverte behandlere kan ikke motta timebestillinger.</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editTherapistIsActive}
+                    onChange={(e) => setEditTherapistIsActive(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
+              </div>
+
+              {/* Rettigheter hvis admin */}
+              {editingTherapist.role === 'admin' && (
+                <div className="space-y-2 pt-1 border-t border-slate-100">
+                  <p className="text-xs font-bold text-slate-700 uppercase">Innsynsrettigheter & Tilgang</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <label className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editTherapistPerms.canViewClientName}
+                        onChange={(e) => setEditTherapistPerms({ ...editTherapistPerms, canViewClientName: e.target.checked })}
+                        className="rounded text-indigo-600"
+                      />
+                      <span className="font-semibold text-slate-800">Innsyn klientnavn</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editTherapistPerms.canViewClientPhone}
+                        onChange={(e) => setEditTherapistPerms({ ...editTherapistPerms, canViewClientPhone: e.target.checked })}
+                        className="rounded text-indigo-600"
+                      />
+                      <span className="font-semibold text-slate-800">Innsyn telefon</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editTherapistPerms.canViewClientEmail}
+                        onChange={(e) => setEditTherapistPerms({ ...editTherapistPerms, canViewClientEmail: e.target.checked })}
+                        className="rounded text-indigo-600"
+                      />
+                      <span className="font-semibold text-slate-800">Innsyn e-post</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editTherapistPerms.canEditJournals}
+                        onChange={(e) => setEditTherapistPerms({ ...editTherapistPerms, canEditJournals: e.target.checked })}
+                        className="rounded text-indigo-600"
+                      />
+                      <span className="font-semibold text-slate-800">Skrive i journal</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer col-span-1 sm:col-span-2">
+                      <input
+                        type="checkbox"
+                        checked={editTherapistPerms.canManageAppointments}
+                        onChange={(e) => setEditTherapistPerms({ ...editTherapistPerms, canManageAppointments: e.target.checked })}
+                        className="rounded text-indigo-600"
+                      />
+                      <span className="font-semibold text-slate-800">Administrere timeavtaler</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsEditTherapistOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
+                >
+                  Avbryt
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-md shadow-sky-600/20 cursor-pointer transition-all"
+                >
+                  Lagre endringer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );

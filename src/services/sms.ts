@@ -5,19 +5,49 @@ export class SmsService {
   /**
    * Formaterer en melding basert på mal og avtaledata
    */
-  public formatMessage(template: string, appointment: Appointment, cancellationLink?: string): string {
+  public formatMessage(
+    template: string, 
+    appointment: Appointment, 
+    cancellationLink?: string,
+    extra?: {
+      newDate?: string;
+      newTime?: string;
+      delayMinutes?: number;
+      therapistName?: string;
+    }
+  ): string {
     const cancelUrl = cancellationLink || `${window.location.origin}/avbestill/${appointment.id}`;
     const meetUrl = appointment.isOnline && appointment.meetingLink 
       ? `Møtelenke: ${appointment.meetingLink}` 
       : '';
 
+    // Beregn evt. nytt klokkeslett ved forsinkelse dersom ikke oppgitt direkte
+    let calculatedNewTime = extra?.newTime;
+    if (!calculatedNewTime && extra?.delayMinutes && appointment.startTime) {
+      try {
+        const [h, m] = appointment.startTime.split(':').map(Number);
+        if (!isNaN(h) && !isNaN(m)) {
+          const totalMin = h * 60 + m + extra.delayMinutes;
+          const newH = Math.floor(totalMin / 60) % 24;
+          const newM = totalMin % 60;
+          calculatedNewTime = `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+        }
+      } catch {
+        calculatedNewTime = appointment.startTime;
+      }
+    }
+
     return template
-      .replace(/{kunde}/g, appointment.clientName)
-      .replace(/{kundenummer}/g, String(appointment.clientNumber))
-      .replace(/{dato}/g, appointment.date)
-      .replace(/{klokkeslett}/g, appointment.startTime)
-      .replace(/{varighet}/g, String(appointment.durationMinutes))
-      .replace(/{pris}/g, String(appointment.price))
+      .replace(/{kunde}/g, appointment.clientName || 'klient')
+      .replace(/{kundenummer}/g, String(appointment.clientNumber || ''))
+      .replace(/{dato}/g, appointment.date || '')
+      .replace(/{klokkeslett}/g, appointment.startTime || '')
+      .replace(/{ny_dato}/g, extra?.newDate || appointment.date || '')
+      .replace(/{nytt_klokkeslett}/g, calculatedNewTime || appointment.startTime || '')
+      .replace(/{forsinkelse}/g, extra?.delayMinutes ? `${extra.delayMinutes} minutter` : '')
+      .replace(/{behandler}/g, extra?.therapistName || appointment.therapistName || 'Terapeut')
+      .replace(/{varighet}/g, String(appointment.durationMinutes || 45))
+      .replace(/{pris}/g, String(appointment.price || ''))
       .replace(/{avbestillingslenke}/g, cancelUrl)
       .replace(/{motelenke}/g, meetUrl)
       .trim();

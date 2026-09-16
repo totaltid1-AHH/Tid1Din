@@ -5,6 +5,7 @@ import {
   JournalEntry, 
   SmsSettings, 
   SmsLog, 
+  SmsTemplate,
   SystemAuditLog, 
   Holiday,
   UserRole
@@ -61,6 +62,44 @@ const DEFAULT_SMS_SETTINGS: SmsSettings = {
   bookingTemplate: 'Hei {kunde}! Din time hos Tid1Din er bekreftet: {dato} kl. {klokkeslett} ({varighet} min, kr {pris}). Avbestilling: {avbestillingslenke}',
   reminderTemplate: 'Påminnelse fra Tid1Din: Du har time {dato} kl. {klokkeslett}. {motelenke} Velkommen!'
 };
+
+export const DEFAULT_SMS_TEMPLATES: SmsTemplate[] = [
+  {
+    id: 'tpl_delay_15',
+    title: '15 min forsinket',
+    category: 'delay',
+    isDefault: true,
+    message: 'Hei {kunde}! Din behandler er dessverre ca. 15 minutter forsinket i dag ({dato}). Ny oppstartstid er ca. kl. {nytt_klokkeslett}. Beklager ulempen!'
+  },
+  {
+    id: 'tpl_delay_30',
+    title: '30 min forsinket',
+    category: 'delay',
+    isDefault: true,
+    message: 'Hei {kunde}! Din behandler er dessverre ca. 30 minutter forsinket i dag ({dato}). Ny oppstartstid er ca. kl. {nytt_klokkeslett}. Beklager ulempen!'
+  },
+  {
+    id: 'tpl_reschedule',
+    title: 'Flytting / Ombooking av time',
+    category: 'reschedule',
+    isDefault: true,
+    message: 'Hei {kunde}! Din avtalte time hos Tid1Din er flyttet til ny dato: {ny_dato} kl. {nytt_klokkeslett}. Vennligst ta kontakt dersom tidspunktet ikke passer.'
+  },
+  {
+    id: 'tpl_welcome',
+    title: 'Oppmøte / Velkommen',
+    category: 'info',
+    isDefault: true,
+    message: 'Hei {kunde}! Vi minner om timen din i dag ({dato}) kl. {klokkeslett}. Vennligst benytt venterommet ved ankomst. Velkommen!'
+  },
+  {
+    id: 'tpl_online',
+    title: 'Videomøte / Online time',
+    category: 'info',
+    isDefault: true,
+    message: 'Hei {kunde}! Her er lenken til din online konsultasjon i dag kl. {klokkeslett}: {motelenke}. Velkommen!'
+  }
+];
 
 // Startverdier for brukere
 const SEED_USERS: UserProfile[] = [
@@ -544,6 +583,55 @@ class DatabaseService {
     const logs = await this.getSmsLogs();
     logs.unshift(log);
     this.setLocal('sms_logs', logs.slice(0, 100)); // Bevar de 100 siste
+  }
+
+  // --- SMS MALER / STANDARDTEKSTER ---
+  public async getSmsTemplates(): Promise<SmsTemplate[]> {
+    if (isFirebaseConfigured && db) {
+      try {
+        const snap = await getDocs(collection(db, 'smsTemplates'));
+        if (!snap.empty) {
+          const list: SmsTemplate[] = [];
+          snap.forEach(d => list.push(d.data() as SmsTemplate));
+          this.setLocal('sms_templates', list);
+          return list;
+        }
+      } catch (e) {
+        console.warn('Firebase error fetching SMS templates:', e);
+      }
+    }
+    return this.getLocal<SmsTemplate[]>('sms_templates', DEFAULT_SMS_TEMPLATES);
+  }
+
+  public async saveSmsTemplate(template: SmsTemplate): Promise<void> {
+    const templates = await this.getSmsTemplates();
+    const index = templates.findIndex(t => t.id === template.id);
+    if (index >= 0) {
+      templates[index] = template;
+    } else {
+      templates.push(template);
+    }
+    this.setLocal('sms_templates', templates);
+    if (isFirebaseConfigured && db) {
+      try {
+        await setDoc(doc(db, 'smsTemplates', template.id), cleanForFirestore(template));
+      } catch (e) {
+        console.error('Kunne ikke lagre SMS-mal i Firestore:', e);
+      }
+    }
+  }
+
+  public async deleteSmsTemplate(id: string): Promise<void> {
+    const templates = await this.getSmsTemplates();
+    const filtered = templates.filter(t => t.id !== id);
+    this.setLocal('sms_templates', filtered);
+    if (isFirebaseConfigured && db) {
+      try {
+        await deleteDoc(doc(db, 'smsTemplates', id));
+      } catch (e) {
+        console.error('Kunne ikke slette SMS-mal i Firestore:', e);
+      }
+    }
   }
 
   // --- SYSTEMLOGG (AUDIT TRAIL) ---
