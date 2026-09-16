@@ -39,15 +39,15 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-between md:pl-64">
+    <div className="min-h-screen bg-slate-50 flex flex-col justify-between lg:pl-64">
       <TwoFactorModal />
       
-      {/* Svart sidefeltmeny (venstre side på desktop, topplinje + skuff på mobil) */}
+      {/* Svart sidefeltmeny (venstre side på desktop, topplinje + skuff på mobil/iPad stående) */}
       <Sidebar currentTab={currentTab} setCurrentTab={setCurrentTab} />
 
       <div className="w-full flex-1">
-        {/* Mobil: full bredde (w-full, px-0), Desktop: max-w-7xl px-4. Padding i bunn sikrer at innhold ikke havner under den faste menyen */}
-        <main className="w-full max-w-full md:max-w-7xl md:mx-auto px-0 sm:px-4 lg:px-8 py-0 sm:py-6 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] md:pb-8">
+        {/* Mobil/iPad: full bredde, Desktop: max-w-7xl px-4. Padding i bunn sikrer at innhold ikke havner under den faste menyen */}
+        <main className="w-full max-w-full lg:max-w-7xl lg:mx-auto px-0 sm:px-4 lg:px-8 py-0 sm:py-6 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8">
           {/* Fanevelging basert på aktiv fane og rolle */}
           {currentTab === 'calendar' && (
             <CalendarView />

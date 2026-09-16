@@ -232,8 +232,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
 
   return (
     <>
-      {/* MOBIL TOPPLINJE (synlig på skjermer under md) */}
-      <div className="md:hidden sticky top-0 z-40 bg-slate-950 border-b border-slate-800 px-4 py-3 flex items-center justify-between text-white">
+      {/* MOBIL & NETTBRETT TOPPLINJE (synlig på skjermer under lg) */}
+      <div className="lg:hidden sticky top-0 z-40 bg-slate-950 border-b border-slate-800 px-4 py-3 flex items-center justify-between text-white">
         <div 
           className="flex items-center gap-2 cursor-pointer"
           onClick={() => handleNavClick('dashboard')}
@@ -253,9 +253,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
         </div>
       </div>
 
-      {/* MOBIL MENYSKUFFE (drawer bakgrunn & panel) */}
+      {/* MOBIL & NETTBRETT MENYSKUFFE (drawer bakgrunn & panel) */}
       {mobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex">
+        <div className="lg:hidden fixed inset-0 z-50 flex">
           <div 
             className="fixed inset-0 bg-black/70 backdrop-blur-xs transition-opacity"
             onClick={() => setMobileMenuOpen(false)}
@@ -289,7 +289,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
       )}
 
       {/* DESKTOP FAST VENSTRESTILT SVART SIDEFELT */}
-      <aside className="hidden md:flex md:fixed md:inset-y-0 md:left-0 md:w-64 bg-slate-950 border-r border-slate-800 flex-col justify-between z-40 text-white">
+      <aside className="hidden lg:flex lg:fixed lg:inset-y-0 lg:left-0 lg:w-64 bg-slate-950 border-r border-slate-800 flex-col justify-between z-40 text-white">
         <div>
           {/* Brand header */}
           <div 

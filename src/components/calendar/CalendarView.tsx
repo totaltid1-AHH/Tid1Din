@@ -82,6 +82,11 @@ export const CalendarView: React.FC = () => {
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
   const [bookingSuccessMessage, setBookingSuccessMessage] = useState<string | null>(null);
 
+  // Lunsj-forslag og status for valg
+  const [lunchSuggestionStatus, setLunchSuggestionStatus] = useState<'pending' | 'accepted' | 'declined'>('pending');
+  const [originalSlotBeforeSuggestion, setOriginalSlotBeforeSuggestion] = useState<GeneratedSlot | null>(null);
+  const [acceptedSlotTime, setAcceptedSlotTime] = useState<{ start: string; end: string; label: string } | null>(null);
+
   useEffect(() => {
     loadData();
   }, [currentUser?.uid]);
@@ -262,10 +267,50 @@ export const CalendarView: React.FC = () => {
   const handleOpenBooking = (slot: GeneratedSlot) => {
     if (!slot.isAvailable) return;
     setSelectedSlot(slot);
+    setOriginalSlotBeforeSuggestion(slot);
+    setLunchSuggestionStatus('pending');
+    setAcceptedSlotTime(null);
     setBookingSlotType(slotTypeOptions[0]);
+    if (currentUser?.role !== 'client' && !selectedClientId && clients.length > 0) {
+      setSelectedClientId(clients[0].uid);
+    }
     setIsDaySlotsModalOpen(false);
     setIsBookingModalOpen(true);
     setBookingSuccessMessage(null);
+  };
+
+  const handleAcceptSuggestion = (altSlot: GeneratedSlot, label: string) => {
+    if (!originalSlotBeforeSuggestion && selectedSlot) {
+      setOriginalSlotBeforeSuggestion(selectedSlot);
+    }
+    const endMin = parseMinutes(altSlot.startTime) + bookingSlotType.durationMinutes;
+    const endTimeStr = formatMinutes(endMin);
+
+    setSelectedSlot(altSlot);
+    setLunchSuggestionStatus('accepted');
+    setAcceptedSlotTime({
+      start: altSlot.startTime,
+      end: endTimeStr,
+      label: label.toLowerCase()
+    });
+  };
+
+  const handleRevertSuggestion = () => {
+    if (originalSlotBeforeSuggestion) {
+      setSelectedSlot(originalSlotBeforeSuggestion);
+    }
+    setLunchSuggestionStatus('pending');
+    setAcceptedSlotTime(null);
+  };
+
+  const handleSlotTypeChange = (st: SlotTypeOption) => {
+    // Hvis timen tidligere var flyttet av forslag, gå tilbake til opprinnelig luke for ny vurdering
+    if (lunchSuggestionStatus === 'accepted' && originalSlotBeforeSuggestion) {
+      setSelectedSlot(originalSlotBeforeSuggestion);
+    }
+    setBookingSlotType(st);
+    setLunchSuggestionStatus('pending');
+    setAcceptedSlotTime(null);
   };
 
   const handleConfirmBooking = async () => {
@@ -277,7 +322,7 @@ export const CalendarView: React.FC = () => {
       if (currentUser.role === 'client') {
         clientObj = currentUser;
       } else {
-        clientObj = clients.find(c => c.uid === selectedClientId);
+        clientObj = clients.find(c => c.uid === selectedClientId) || clients[0];
       }
 
       if (!clientObj) {
@@ -287,8 +332,9 @@ export const CalendarView: React.FC = () => {
       }
 
       const startMin = parseMinutes(selectedSlot.startTime);
-      // Dersom timen kolliderer med lunsj og bekreftes, utvides slutten med lunsjpausen slik at timen gjennomføres
-      const totalSpanMinutes = lunchCollision.collides
+      // Dersom timen kolliderer med lunsj og IKKE er flyttet via godkjent forslag, utvides slutten med lunsjpausen slik at timen gjennomføres
+      const isStillColliding = lunchSuggestionStatus !== 'accepted' && lunchCollision.collides;
+      const totalSpanMinutes = isStillColliding
         ? bookingSlotType.durationMinutes + lunchCollision.lunchDurationMinutes
         : bookingSlotType.durationMinutes;
       const endMin = startMin + totalSpanMinutes;
@@ -297,7 +343,7 @@ export const CalendarView: React.FC = () => {
       const appointmentId = 'apt_' + Date.now();
       const meetingLink = isOnlineMeeting ? smsService.generateMeetingLink(appointmentId) : undefined;
 
-      const finalNotes = lunchCollision.collides && lunchCollision.lunchBreak
+      const finalNotes = isStillColliding && lunchCollision.lunchBreak
         ? [
             bookingNotes,
             `(Merk: Timen blir avbrutt av ${lunchCollision.lunchBreak.title || 'lunsjpause'} kl. ${lunchCollision.lunchBreak.start}–${lunchCollision.lunchBreak.end})`
@@ -327,7 +373,18 @@ export const CalendarView: React.FC = () => {
       };
 
       await dbService.saveAppointment(newAppointment);
-      const smsLog = await smsService.sendBookingConfirmation(newAppointment);
+
+      // Send SMS med sikker timeout (maks 3,5 sekunder) slik at grensesnittet aldri henger på «vent»
+      let smsSentOk = false;
+      try {
+        const smsLog = await Promise.race([
+          smsService.sendBookingConfirmation(newAppointment),
+          new Promise<null>((_, reject) => setTimeout(() => reject(new Error('SMS timeout')), 3500))
+        ]);
+        if (smsLog?.status === 'sent') smsSentOk = true;
+      } catch (smsErr) {
+        console.warn('SMS-sending tok lang tid eller feilet, fortsetter booking:', smsErr);
+      }
 
       await dbService.logAction(
         { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
@@ -337,9 +394,12 @@ export const CalendarView: React.FC = () => {
 
       await loadData();
       setIsBookingModalOpen(false);
-      setBookingSuccessMessage(`Timen er bekreftet! SMS-varsel ${smsLog?.status === 'sent' ? 'sendt' : 'registrert'} til ${clientObj.phone || 'klient'}.`);
+      setBookingSuccessMessage(`Timen er bekreftet for ${clientObj.displayName}! SMS-varsel ${smsSentOk ? 'sendt' : 'registrert'}.`);
       setSelectedSlot(null);
       setBookingNotes('');
+      setLunchSuggestionStatus('pending');
+      setAcceptedSlotTime(null);
+      setOriginalSlotBeforeSuggestion(null);
     } catch (e: any) {
       alert('Feil ved bestilling: ' + e.message);
     } finally {
@@ -362,34 +422,34 @@ export const CalendarView: React.FC = () => {
   return (
     <div className="space-y-2 sm:space-y-5 w-full">
       
-      {/* Toppkontroller - Responsivt og lekkert på mobil og desktop */}
+      {/* Toppkontroller - Responsivt og lekkert på mobil, iPad og desktop */}
       <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-slate-200 p-3 sm:p-5 w-full">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           
-          {/* Rad 1 på mobil: Månedstittel og navigasjonspiler (<, I dag, >) */}
-          <div className="flex items-center justify-between gap-2 w-full sm:w-auto">
+          {/* Rad 1: Månedstittel og navigasjonspiler */}
+          <div className="flex items-center justify-between gap-2 w-full lg:w-auto">
             <h2 className="text-base sm:text-lg font-bold text-slate-900 capitalize tracking-tight">
               {format(currentDate, viewMode === 'month' ? 'MMMM yyyy' : "'Uke' w, MMMM", { locale: nb })}
             </h2>
 
-            {/* Piler på mobil for rask og sikker navigering */}
-            <div className="flex sm:hidden items-center gap-1">
+            {/* Piler på mobil og iPad under lg-størrelse */}
+            <div className="flex lg:hidden items-center gap-1">
               <button
                 onClick={handlePrev}
-                className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 border border-slate-200"
+                className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 border border-slate-200 cursor-pointer"
                 aria-label="Forrige"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
               <button
                 onClick={() => { setCurrentDate(new Date()); setSelectedDate(new Date()); }}
-                className="px-2 py-1 text-[11px] font-semibold rounded-lg text-slate-700 hover:bg-slate-100 border border-slate-200"
+                className="px-2 py-1 text-[11px] font-semibold rounded-lg text-slate-700 hover:bg-slate-100 border border-slate-200 cursor-pointer"
               >
                 I dag
               </button>
               <button
                 onClick={handleNext}
-                className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 border border-slate-200"
+                className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 border border-slate-200 cursor-pointer"
                 aria-label="Neste"
               >
                 <ChevronRight className="w-4 h-4" />
@@ -397,10 +457,10 @@ export const CalendarView: React.FC = () => {
             </div>
           </div>
 
-          {/* Rad 2 på mobil: Visningsbryter og fargekoder */}
-          <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-4 w-full sm:w-auto flex-wrap sm:flex-nowrap">
+          {/* Rad 2: Visningsbryter og fargekoder */}
+          <div className="flex items-center justify-between lg:justify-end gap-2 sm:gap-4 w-full lg:w-auto flex-wrap">
             {/* Fargekoder */}
-            <div className="flex items-center gap-2 sm:gap-3 text-[11px] font-medium text-slate-500">
+            <div className="flex items-center gap-2 sm:gap-3 text-[11px] font-medium text-slate-500 flex-wrap">
               {isClient && (
                 <span className="flex items-center gap-1" title="Dine avtalte timer">
                   <span className="w-2.5 h-2.5 rounded-full bg-sky-600 ring-2 ring-sky-300 flex-shrink-0"></span>
@@ -426,7 +486,7 @@ export const CalendarView: React.FC = () => {
               <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-xs font-semibold">
                 <button
                   onClick={() => setViewMode('month')}
-                  className={`px-2.5 py-1 rounded-md transition-all ${
+                  className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                     viewMode === 'month' ? 'bg-white text-sky-700 shadow-xs' : 'text-slate-500'
                   }`}
                 >
@@ -434,7 +494,7 @@ export const CalendarView: React.FC = () => {
                 </button>
                 <button
                   onClick={() => setViewMode('week')}
-                  className={`px-2.5 py-1 rounded-md transition-all ${
+                  className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                     viewMode === 'week' ? 'bg-white text-sky-700 shadow-xs' : 'text-slate-500'
                   }`}
                 >
@@ -442,24 +502,24 @@ export const CalendarView: React.FC = () => {
                 </button>
               </div>
 
-              {/* Piler på desktop */}
-              <div className="hidden sm:flex items-center gap-1">
+              {/* Piler på store skjermer */}
+              <div className="hidden lg:flex items-center gap-1">
                 <button
                   onClick={handlePrev}
-                  className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100"
+                  className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
                   aria-label="Forrige"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => { setCurrentDate(new Date()); setSelectedDate(new Date()); }}
-                  className="px-2 py-1 text-[11px] font-semibold rounded-lg text-slate-700 hover:bg-slate-100"
+                  className="px-2 py-1 text-[11px] font-semibold rounded-lg text-slate-700 hover:bg-slate-100 cursor-pointer"
                 >
                   I dag
                 </button>
                 <button
                   onClick={handleNext}
-                  className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100"
+                  className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
                   aria-label="Neste"
                 >
                   <ChevronRight className="w-4 h-4" />
@@ -473,7 +533,7 @@ export const CalendarView: React.FC = () => {
 
       {/* Terapeutvalg over kalenderen */}
       <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-slate-200 p-2.5 sm:p-3.5 shadow-xs w-full">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-sky-600 to-cyan-500 text-white flex items-center justify-center shadow-xs flex-shrink-0">
               <User className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -1002,8 +1062,13 @@ export const CalendarView: React.FC = () => {
 
             <div className="mb-4">
               <h3 className="text-lg font-bold text-slate-900">Bekreft timebestilling</h3>
-              <p className="text-xs text-slate-500">
-                {format(new Date(selectedSlot.date), 'EEEE d. MMMM', { locale: nb })} kl. <strong className="text-slate-800">{selectedSlot.startTime}</strong>
+              <p className="text-xs text-slate-500 flex items-center flex-wrap gap-1.5 mt-0.5">
+                <span>{format(new Date(selectedSlot.date), 'EEEE d. MMMM', { locale: nb })} kl. <strong className="text-slate-800">{selectedSlot.startTime}</strong></span>
+                {lunchSuggestionStatus === 'accepted' && acceptedSlotTime && (
+                  <span className="text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-md">
+                    ✓ Ny tid: kl. {acceptedSlotTime.start} – {acceptedSlotTime.end}
+                  </span>
+                )}
               </p>
               <p className="text-xs font-semibold text-slate-700 mt-1 flex items-center gap-1">
                 <User className="w-3.5 h-3.5 text-sky-600" />
@@ -1050,72 +1115,157 @@ export const CalendarView: React.FC = () => {
                       <button
                         key={st.type}
                         type="button"
-                        onClick={() => setBookingSlotType(st)}
+                        onClick={() => handleSlotTypeChange(st)}
                         className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                           isSel ? 'border-sky-600 bg-sky-50 ring-1 ring-sky-500' : 'border-slate-200 bg-white hover:bg-slate-50'
                         }`}
                       >
-                        <p className="text-xs font-bold text-slate-800">{st.title}</p>
+                        <p className="text-xs font-bold text-slate-800 truncate">{st.title}</p>
                         <p className="text-[10px] text-slate-500">{st.durationMinutes} min</p>
-                        <p className="text-xs font-semibold text-sky-700 mt-0.5">kr {st.price},-</p>
+                        <p className="text-xs font-semibold text-sky-700 mt-0.5 whitespace-nowrap">kr {st.price},-</p>
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Lunsjkollisjonsvarsel og forslag til sammenhengende time */}
-              {lunchCollision.collides && lunchCollision.lunchBreak && (
-                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-2.5">
+              {/* 1. Hvis brukeren har godtatt et forslag om flytting */}
+              {lunchSuggestionStatus === 'accepted' && acceptedSlotTime && (
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-xs shadow-xs space-y-1.5">
                   <div className="flex items-start gap-2.5">
-                    <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-bold text-amber-900">
-                        Timen blir avbrutt av lunsj ({lunchCollision.lunchDurationMinutes} min)
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-emerald-900 text-sm">
+                        Forslag godtatt!
                       </p>
-                      <p className="text-amber-800 mt-0.5 leading-relaxed">
-                        En {bookingSlotType.title.toLowerCase()} kl. {selectedSlot.startTime} kolliderer med {lunchCollision.lunchBreak.title ? lunchCollision.lunchBreak.title.toLowerCase() : 'lunsjpausen'} ({lunchCollision.lunchBreak.start} – {lunchCollision.lunchBreak.end}). 
-                        Ønsker du å flytte timen slik at den blir sammenhengende?
+                      <p className="text-emerald-800 mt-0.5 leading-relaxed">
+                        Timen er flyttet til <strong className="text-emerald-950 font-extrabold">kl. {acceptedSlotTime.start} – {acceptedSlotTime.end}</strong> ({acceptedSlotTime.label}). Den gjennomføres sammenhengende uten pause.
+                      </p>
+                      <div className="pt-1.5 flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={handleRevertSuggestion}
+                          className="text-xs font-semibold text-emerald-700 hover:text-emerald-900 underline inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          Angre og gå tilbake til kl. {originalSlotBeforeSuggestion?.startTime || 'opprinnelig tid'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 2. Hvis brukeren har avslått forslaget og valgt å beholde opprinnelig tid */}
+              {lunchCollision.collides && lunchCollision.lunchBreak && lunchSuggestionStatus === 'declined' && (
+                <div className="p-3.5 rounded-xl bg-slate-100 border border-slate-300 text-slate-800 text-xs shadow-xs space-y-1.5">
+                  <div className="flex items-start gap-2.5">
+                    <Clock className="w-4 h-4 text-slate-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-slate-900">
+                        Forslag avslått – beholder kl. {selectedSlot.startTime}
+                      </p>
+                      <p className="text-slate-600 mt-0.5 leading-relaxed">
+                        Timen gjennomføres som oppsatt med pause under {lunchCollision.lunchBreak.title || 'lunsj'} (kl. {lunchCollision.lunchBreak.start} – {lunchCollision.lunchBreak.end}). Total tidsramme blir {bookingSlotType.durationMinutes + lunchCollision.lunchDurationMinutes} minutter.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setLunchSuggestionStatus('pending')}
+                        className="mt-1 text-xs font-semibold text-sky-700 hover:text-sky-900 underline inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        Vis forslag om sammenhengende time på nytt
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 3. Uavklart forslag: Viser valg om å enten godta sammenhengende time eller avslå */}
+              {lunchCollision.collides && lunchCollision.lunchBreak && lunchSuggestionStatus === 'pending' && (
+                <div className="p-3.5 sm:p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs space-y-3 shadow-xs">
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-amber-900 text-sm">
+                        Timen blir avbrutt av {lunchCollision.lunchBreak.title || 'lunsjpause'} ({lunchCollision.lunchBreak.start} – {lunchCollision.lunchBreak.end})
+                      </p>
+                      <p className="text-amber-800 mt-1 leading-relaxed">
+                        En {bookingSlotType.title.toLowerCase()} ({bookingSlotType.durationMinutes} min) kl. {selectedSlot.startTime} vil bli avbrutt av lunsjen. 
+                        Velg om du vil <strong>godta en sammenhengende time</strong> eller <strong>avslå og beholde opprinnelig tid</strong>:
                       </p>
                     </div>
                   </div>
 
-                  {/* Forslag til sammenhengende tider */}
-                  <div className="pt-2 border-t border-amber-200/80 space-y-1.5">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-900">
-                      Forslag til sammenhengende time:
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {alternativeSlots.before && (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedSlot(alternativeSlots.before!)}
-                          className="w-full py-2 px-2.5 rounded-lg bg-white border border-amber-300 hover:bg-amber-100 hover:border-amber-400 text-amber-950 font-semibold text-xs text-left transition-all flex items-center justify-between shadow-2xs group cursor-pointer"
-                        >
-                          <span className="text-[11px] text-amber-800">Før lunsj:</span>
-                          <span className="font-bold text-amber-950 group-hover:text-amber-900">
-                            kl. {alternativeSlots.before.startTime} – {alternativeSlots.before.endTime}
+                  {/* Valgknapper: Godta eller avslå */}
+                  <div className="pt-2 border-t border-amber-200 space-y-2">
+                    {/* Forslag etter lunsj */}
+                    {alternativeSlots.after && (
+                      <button
+                        type="button"
+                        onClick={() => handleAcceptSuggestion(alternativeSlots.after!, 'Etter lunsj')}
+                        className="w-full p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs text-left transition-all flex items-center justify-between shadow-xs cursor-pointer gap-2"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Check className="w-4 h-4 text-emerald-200 flex-shrink-0" />
+                          <div className="min-w-0">
+                            <span className="font-bold block text-white text-xs">Godta forslag: Etter lunsj</span>
+                            <span className="text-[11px] text-emerald-100 block truncate">
+                              kl. {alternativeSlots.after.startTime} – {alternativeSlots.after.endTime} (sammenhengende)
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[11px] font-bold bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-lg text-white flex-shrink-0 whitespace-nowrap">
+                          Godta & flytt &rarr;
+                        </span>
+                      </button>
+                    )}
+
+                    {/* Forslag før lunsj */}
+                    {alternativeSlots.before && (
+                      <button
+                        type="button"
+                        onClick={() => handleAcceptSuggestion(alternativeSlots.before!, 'Før lunsj')}
+                        className="w-full p-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs text-left transition-all flex items-center justify-between shadow-xs cursor-pointer gap-2"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Check className="w-4 h-4 text-sky-200 flex-shrink-0" />
+                          <div className="min-w-0">
+                            <span className="font-bold block text-white text-xs">Godta forslag: Før lunsj</span>
+                            <span className="text-[11px] text-sky-100 block truncate">
+                              kl. {alternativeSlots.before.startTime} – {alternativeSlots.before.endTime} (sammenhengende)
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[11px] font-bold bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-lg text-white flex-shrink-0 whitespace-nowrap">
+                          Godta & flytt &rarr;
+                        </span>
+                      </button>
+                    )}
+
+                    {/* Avslå forslag og behold opprinnelig tid */}
+                    <button
+                      type="button"
+                      onClick={() => setLunchSuggestionStatus('declined')}
+                      className="w-full p-2.5 rounded-xl bg-white hover:bg-amber-100/70 border border-amber-300 text-amber-950 font-semibold text-xs transition-all flex items-center justify-between cursor-pointer gap-2"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <X className="w-4 h-4 text-amber-700 flex-shrink-0" />
+                        <div className="min-w-0 text-left">
+                          <span className="font-bold block text-amber-950">Avslå forslag – behold kl. {selectedSlot.startTime}</span>
+                          <span className="text-[11px] text-amber-800 block truncate">
+                            Timen avbrytes av lunsj ({lunchCollision.lunchDurationMinutes} min pause)
                           </span>
-                        </button>
-                      )}
-                      {alternativeSlots.after && (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedSlot(alternativeSlots.after!)}
-                          className="w-full py-2 px-2.5 rounded-lg bg-white border border-amber-300 hover:bg-amber-100 hover:border-amber-400 text-amber-950 font-semibold text-xs text-left transition-all flex items-center justify-between shadow-2xs group cursor-pointer"
-                        >
-                          <span className="text-[11px] text-amber-800">Etter lunsj:</span>
-                          <span className="font-bold text-amber-950 group-hover:text-amber-900">
-                            kl. {alternativeSlots.after.startTime} – {alternativeSlots.after.endTime}
-                          </span>
-                        </button>
-                      )}
-                      {!alternativeSlots.before && !alternativeSlots.after && (
-                        <p className="text-xs text-amber-700 italic col-span-2">
-                          Ingen sammenhengende timer er ledige før eller etter lunsj denne dagen.
-                        </p>
-                      )}
-                    </div>
+                        </div>
+                      </div>
+                      <span className="text-[11px] font-medium text-amber-800 bg-amber-100 border border-amber-200 px-2 py-1 rounded-lg flex-shrink-0 whitespace-nowrap">
+                        Avslå
+                      </span>
+                    </button>
+
+                    {!alternativeSlots.before && !alternativeSlots.after && (
+                      <p className="text-xs text-amber-700 italic">
+                        Ingen andre sammenhengende timer er ledige før eller etter lunsj denne dagen.
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
@@ -1165,11 +1315,12 @@ export const CalendarView: React.FC = () => {
               </div>
 
               {/* Knapper */}
-              <div className="flex gap-2 pt-1">
+              <div className="flex gap-2 pt-2">
                 <button
                   type="button"
+                  disabled={isSubmittingBooking}
                   onClick={() => setIsBookingModalOpen(false)}
-                  className="w-1/2 py-2 rounded-xl border border-slate-300 text-slate-700 text-xs font-semibold"
+                  className="w-1/3 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
                 >
                   Avbryt
                 </button>
@@ -1177,13 +1328,29 @@ export const CalendarView: React.FC = () => {
                   type="button"
                   disabled={isSubmittingBooking}
                   onClick={handleConfirmBooking}
-                  className="w-1/2 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-md shadow-sky-600/20 disabled:opacity-50"
+                  className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
+                    lunchSuggestionStatus === 'accepted'
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
+                      : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/20'
+                  }`}
                 >
-                  {isSubmittingBooking 
-                    ? 'Bekrefter...' 
-                    : lunchCollision.collides 
-                      ? 'Bekreft time (avbrutt av lunsj)' 
-                      : 'Bekreft time'}
+                  {isSubmittingBooking ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Lagrer bestilling...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 flex-shrink-0" />
+                      <span>
+                        {lunchSuggestionStatus === 'accepted' && acceptedSlotTime
+                          ? `Bekreft time (kl. ${acceptedSlotTime.start} – ${acceptedSlotTime.end})`
+                          : lunchCollision.collides && lunchSuggestionStatus === 'declined'
+                            ? `Bekreft time (kl. ${selectedSlot.startTime}, m/lunsjpause)`
+                            : `Bekreft time (kl. ${selectedSlot.startTime})`}
+                      </span>
+                    </>
+                  )}
                 </button>
               </div>
 
