@@ -370,11 +370,27 @@ class DatabaseService {
 
     if (isFirebaseConfigured && db) {
       try {
-        const snap = await getDoc(doc(db, 'workingHours', docId));
+        let snap = await getDoc(doc(db, 'workingHours', docId));
+        // Dersom terapeuten ikke har eget oppsett i Firestore, sjekk klinikkens standard
+        if (!snap.exists() && therapistId) {
+          snap = await getDoc(doc(db, 'workingHours', 'default'));
+        }
+
         if (snap.exists()) {
           const config = snap.data() as WorkingHoursConfig;
-          this.setLocal(storageKey, config);
-          return config;
+          const merged: WorkingHoursConfig = {
+            ...DEFAULT_WORKING_HOURS,
+            ...config,
+            workDays: Array.isArray(config.workDays) && config.workDays.length > 0 
+              ? config.workDays 
+              : DEFAULT_WORKING_HOURS.workDays,
+            breaks: Array.isArray(config.breaks) ? config.breaks : DEFAULT_WORKING_HOURS.breaks,
+            prices: { ...DEFAULT_WORKING_HOURS.prices, ...(config.prices || {}) },
+            id: docId,
+            therapistId: therapistId || config.therapistId
+          };
+          this.setLocal(storageKey, merged);
+          return merged;
         } else if (!therapistId) {
           await setDoc(doc(db, 'workingHours', 'default'), DEFAULT_WORKING_HOURS);
           this.setLocal('working_hours', DEFAULT_WORKING_HOURS);
@@ -387,18 +403,27 @@ class DatabaseService {
 
     const local = this.getLocal<WorkingHoursConfig | null>(storageKey, null);
     if (local) {
-      return local;
+      return {
+        ...DEFAULT_WORKING_HOURS,
+        ...local,
+        workDays: Array.isArray(local.workDays) && local.workDays.length > 0 ? local.workDays : DEFAULT_WORKING_HOURS.workDays,
+        breaks: Array.isArray(local.breaks) ? local.breaks : DEFAULT_WORKING_HOURS.breaks,
+        prices: { ...DEFAULT_WORKING_HOURS.prices, ...(local.prices || {}) },
+        id: docId,
+        therapistId: therapistId || local.therapistId
+      };
     }
 
     const baseDefault = this.getLocal<WorkingHoursConfig>('working_hours', DEFAULT_WORKING_HOURS);
-    if (therapistId) {
-      return {
-        ...baseDefault,
-        id: docId,
-        therapistId: therapistId
-      };
-    }
-    return baseDefault;
+    return {
+      ...DEFAULT_WORKING_HOURS,
+      ...baseDefault,
+      workDays: Array.isArray(baseDefault.workDays) && baseDefault.workDays.length > 0 ? baseDefault.workDays : DEFAULT_WORKING_HOURS.workDays,
+      breaks: Array.isArray(baseDefault.breaks) ? baseDefault.breaks : DEFAULT_WORKING_HOURS.breaks,
+      prices: { ...DEFAULT_WORKING_HOURS.prices, ...(baseDefault.prices || {}) },
+      id: docId,
+      therapistId: therapistId || baseDefault.therapistId
+    };
   }
 
   public async saveWorkingHours(config: WorkingHoursConfig, therapistId?: string): Promise<void> {

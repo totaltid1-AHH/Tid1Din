@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Sidebar } from './components/common/Sidebar';
 import { TwoFactorModal } from './components/auth/TwoFactorModal';
 import { LoginView } from './components/auth/LoginView';
+import { CalendarView } from './components/calendar/CalendarView';
 import { UserCalendarView } from './components/calendar/UserCalendarView';
 import { BookingView } from './components/calendar/BookingView';
 import { ClientDashboard } from './components/dashboard/ClientDashboard';
@@ -16,6 +17,15 @@ const AppContent: React.FC = () => {
   const { currentUser, isLoading } = useAuth();
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [bookingInitialDate, setBookingInitialDate] = useState<string | undefined>(undefined);
+
+  // Sikre at dersom rollen endres til 'client', blir eventuelle admin-faner automatisk tilbakestilt til 'dashboard'
+  useEffect(() => {
+    if (currentUser?.role === 'client') {
+      if (['clients', 'admin_settings', 'super_admin'].includes(currentTab)) {
+        setCurrentTab('dashboard');
+      }
+    }
+  }, [currentUser?.role, currentUser?.uid, currentTab]);
 
   if (isLoading) {
     return (
@@ -52,16 +62,22 @@ const AppContent: React.FC = () => {
         <main className="w-full max-w-full lg:max-w-7xl lg:mx-auto px-0 sm:px-4 lg:px-8 py-0 sm:py-6 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8">
           {/* Fanevelging basert på aktiv fane og rolle */}
           {currentTab === 'calendar' && (
-            <UserCalendarView 
-              onNavigateToBooking={(dateStr) => {
-                setBookingInitialDate(dateStr);
-                setCurrentTab('booking');
-              }} 
-            />
+            currentUser.role === 'client' ? (
+              <UserCalendarView 
+                key={`client_cal_${currentUser.uid}`}
+                onNavigateToBooking={(dateStr) => {
+                  setBookingInitialDate(dateStr);
+                  setCurrentTab('booking');
+                }} 
+              />
+            ) : (
+              <CalendarView key={`admin_cal_${currentUser.uid}`} />
+            )
           )}
 
           {currentTab === 'booking' && (
             <BookingView 
+              key={`booking_${currentUser.uid}_${bookingInitialDate || 'default'}`}
               onNavigateToCalendar={() => setCurrentTab('calendar')}
               onNavigateToDashboard={() => setCurrentTab('dashboard')}
               initialDate={bookingInitialDate}
@@ -69,21 +85,22 @@ const AppContent: React.FC = () => {
           )}
 
           {currentTab === 'clients' && (currentUser.role === 'hovedadmin' || currentUser.role === 'admin') && (
-            <ClientListView />
+            <ClientListView key={`clients_${currentUser.uid}`} />
           )}
 
           {currentTab === 'admin_settings' && (currentUser.role === 'hovedadmin' || currentUser.role === 'admin') && (
-            <SuperAdminPanel />
+            <SuperAdminPanel key={`settings_${currentUser.uid}`} />
           )}
 
           {currentTab === 'super_admin' && currentUser.role === 'hovedadmin' && (
-            <SuperAdminSettingsView />
+            <SuperAdminSettingsView key={`super_${currentUser.uid}`} />
           )}
 
           {currentTab === 'dashboard' && (
             <>
               {currentUser.role === 'client' ? (
                 <ClientDashboard 
+                  key={`client_dash_${currentUser.uid}`}
                   onNavigateToCalendar={() => setCurrentTab('calendar')}
                   onNavigateToBooking={() => {
                     setBookingInitialDate(undefined);
@@ -91,7 +108,10 @@ const AppContent: React.FC = () => {
                   }}
                 />
               ) : (
-                <AdminDashboard onNavigateToCalendar={() => setCurrentTab('calendar')} />
+                <AdminDashboard 
+                  key={`admin_dash_${currentUser.uid}`}
+                  onNavigateToCalendar={() => setCurrentTab('calendar')} 
+                />
               )}
             </>
           )}

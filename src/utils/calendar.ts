@@ -65,7 +65,8 @@ export function generateDaySlots(
   appointments: Appointment[],
   holidays: Holiday[] = []
 ): GeneratedSlot[] {
-  const targetDate = new Date(dateStr);
+  if (!config) return [];
+  const targetDate = new Date(`${dateStr}T12:00:00`);
   const dayOfWeek = targetDate.getDay(); // 0 = Søndag, 1 = Mandag, osv.
 
   // Sjekk ferie
@@ -75,9 +76,10 @@ export function generateDaySlots(
   }
 
   // Sjekk om arbeidsdagen er aktiv (enten via dagsspesifikk kalender eller ukentlig mal)
-  let isWorkDay = config.workDays.includes(dayOfWeek);
-  let startTimeStr = config.startTime;
-  let endTimeStr = config.endTime;
+  const workDays = Array.isArray(config.workDays) && config.workDays.length > 0 ? config.workDays : [1, 2, 3, 4, 5];
+  let isWorkDay = workDays.includes(dayOfWeek);
+  let startTimeStr = config.startTime || '08:00';
+  let endTimeStr = config.endTime || '16:00';
 
   if (config.dailySchedules && config.dailySchedules[dateStr]) {
     const daily = config.dailySchedules[dateStr];
@@ -97,9 +99,11 @@ export function generateDaySlots(
   const step = slotDuration + breakDuration;
 
   // Filtrer aktive avtaler for denne datoen
-  const dayAppointments = appointments.filter(
+  const dayAppointments = (appointments || []).filter(
     a => a.date === dateStr && a.status !== 'cancelled'
   );
+
+  const breaks = Array.isArray(config.breaks) ? config.breaks : [];
 
   const slots: GeneratedSlot[] = [];
   let current = startMinutes;
@@ -109,7 +113,7 @@ export function generateDaySlots(
     const slotEnd = formatMinutes(current + slotDuration);
 
     // Sjekk om luken overlapper med en fast pause (f.eks. lunsj)
-    const breakOverlap = config.breaks.find(b => {
+    const breakOverlap = breaks.find(b => {
       const bStart = parseMinutes(b.start);
       const bEnd = parseMinutes(b.end);
       return current < bEnd && current + slotDuration > bStart;
@@ -159,6 +163,9 @@ export function getDayAvailability(
   appointments: Appointment[],
   holidays: Holiday[] = []
 ): DayAvailabilityInfo {
+  if (!config) {
+    return { total: 0, available: 0, booked: 0, status: 'closed' };
+  }
   const slots = generateDaySlots(dateStr, config, appointments, holidays);
   const total = slots.length;
   if (total === 0) {

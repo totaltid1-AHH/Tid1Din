@@ -107,6 +107,14 @@ export const BookingView: React.FC<BookingViewProps> = ({
     loadData();
   }, [currentUser?.uid]);
 
+  useEffect(() => {
+    if (initialDate) {
+      const d = new Date(`${initialDate}T12:00:00`);
+      setSelectedDate(d);
+      setCurrentDate(d);
+    }
+  }, [initialDate]);
+
   const loadData = async () => {
     const apts = await dbService.getAppointments();
     const users = await dbService.getUsers();
@@ -145,23 +153,43 @@ export const BookingView: React.FC<BookingViewProps> = ({
     }
 
     if (!preselectedId || !availableTherapists.some(t => t.uid === preselectedId)) {
-      preselectedId = availableTherapists[0]?.uid || '';
+      const activeNonLeave = availableTherapists.find(t => !isTherapistOnLeave(t));
+      preselectedId = activeNonLeave?.uid || availableTherapists[0]?.uid || '';
     }
 
     setSelectedTherapistId(preselectedId);
 
+    let wh: WorkingHoursConfig;
     if (preselectedId) {
-      const wh = await dbService.getWorkingHours(preselectedId);
-      setWorkingHours(wh);
+      wh = await dbService.getWorkingHours(preselectedId);
     } else {
-      const wh = await dbService.getWorkingHours();
-      setWorkingHours(wh);
+      wh = await dbService.getWorkingHours();
     }
+    setWorkingHours(wh);
 
     if (currentUser?.role === 'client') {
       setSelectedClientId(currentUser.uid);
     } else if (clientList.length > 0) {
       setSelectedClientId(clientList[0].uid);
+    }
+
+    // Dersom ingen dato ble eksplisitt sendt inn og i dag er stengt (f.eks. helg), finn neste åpne dag
+    if (!initialDate) {
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      const todayAvail = getDayAvailability(todayStr, wh, apts, hList);
+      if (todayAvail.status === 'closed') {
+        for (let i = 1; i <= 14; i++) {
+          const futureDate = new Date();
+          futureDate.setDate(futureDate.getDate() + i);
+          const fStr = format(futureDate, 'yyyy-MM-dd');
+          const fAvail = getDayAvailability(fStr, wh, apts, hList);
+          if (fAvail.status !== 'closed') {
+            setSelectedDate(futureDate);
+            setCurrentDate(futureDate);
+            break;
+          }
+        }
+      }
     }
   };
 
@@ -192,19 +220,19 @@ export const BookingView: React.FC<BookingViewProps> = ({
       type: 'single',
       title: 'Enkelttime',
       durationMinutes: 45,
-      price: workingHours?.prices?.single ?? 850
+      price: workingHours?.prices?.single ?? 950
     },
     {
       type: 'double',
       title: 'Dobbelttime',
       durationMinutes: 90,
-      price: workingHours?.prices?.double ?? 1600
+      price: workingHours?.prices?.double ?? 1800
     },
     {
       type: 'triple',
       title: 'Trippeltime',
       durationMinutes: 135,
-      price: workingHours?.prices?.triple ?? 2300
+      price: workingHours?.prices?.triple ?? 2600
     }
   ];
 

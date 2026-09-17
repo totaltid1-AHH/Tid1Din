@@ -60,6 +60,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
     setMobileMenuOpen(false);
   };
 
+  const handleRoleSwitch = (uid: string) => {
+    switchUserRole(uid);
+    setShowRoleSwitcher(false);
+    setMobileMenuOpen(false);
+    setCurrentTab('dashboard');
+  };
+
   const renderNavLinks = () => {
     if (!currentUser) return null;
 
@@ -184,7 +191,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
               </div>
               <div className="p-1.5 space-y-1">
                 <button
-                  onClick={() => { switchUserRole('u_hovedadmin'); setShowRoleSwitcher(false); }}
+                  onClick={() => handleRoleSwitch('u_hovedadmin')}
                   className="w-full text-left px-3 py-2 text-xs rounded-xl hover:bg-slate-800 flex items-center justify-between transition-colors text-slate-200"
                 >
                   <div>
@@ -195,7 +202,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
                 </button>
 
                 <button
-                  onClick={() => { switchUserRole('u_admin_full'); setShowRoleSwitcher(false); }}
+                  onClick={() => handleRoleSwitch('u_admin_full')}
                   className="w-full text-left px-3 py-2 text-xs rounded-xl hover:bg-slate-800 flex items-center justify-between transition-colors text-slate-200"
                 >
                   <div>
@@ -206,7 +213,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
                 </button>
 
                 <button
-                  onClick={() => { switchUserRole('u_admin_restricted'); setShowRoleSwitcher(false); }}
+                  onClick={() => handleRoleSwitch('u_admin_restricted')}
                   className="w-full text-left px-3 py-2 text-xs rounded-xl hover:bg-slate-800 flex items-center justify-between transition-colors text-slate-200"
                 >
                   <div>
@@ -217,7 +224,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
                 </button>
 
                 <button
-                  onClick={() => { switchUserRole('u_client_1000'); setShowRoleSwitcher(false); }}
+                  onClick={() => handleRoleSwitch('u_client_1000')}
                   className="w-full text-left px-3 py-2 text-xs rounded-xl hover:bg-slate-800 flex items-center justify-between transition-colors text-slate-200"
                 >
                   <div>
