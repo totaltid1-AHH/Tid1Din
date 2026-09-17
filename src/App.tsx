@@ -3,17 +3,19 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { Sidebar } from './components/common/Sidebar';
 import { TwoFactorModal } from './components/auth/TwoFactorModal';
 import { LoginView } from './components/auth/LoginView';
-import { CalendarView } from './components/calendar/CalendarView';
+import { UserCalendarView } from './components/calendar/UserCalendarView';
+import { BookingView } from './components/calendar/BookingView';
 import { ClientDashboard } from './components/dashboard/ClientDashboard';
 import { AdminDashboard } from './components/dashboard/AdminDashboard';
 import { ClientListView } from './components/clients/ClientListView';
 import { SuperAdminPanel } from './components/admin/SuperAdminPanel';
 import { SuperAdminSettingsView } from './components/admin/SuperAdminSettingsView';
-import { ShieldCheck, ShieldAlert, Lock, Calendar as CalendarIcon, LayoutDashboard, Users, Settings } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, Lock, Calendar as CalendarIcon, CalendarPlus, LayoutDashboard, Users, Settings } from 'lucide-react';
 
 const AppContent: React.FC = () => {
   const { currentUser, isLoading } = useAuth();
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
+  const [bookingInitialDate, setBookingInitialDate] = useState<string | undefined>(undefined);
 
   if (isLoading) {
     return (
@@ -50,7 +52,20 @@ const AppContent: React.FC = () => {
         <main className="w-full max-w-full lg:max-w-7xl lg:mx-auto px-0 sm:px-4 lg:px-8 py-0 sm:py-6 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8">
           {/* Fanevelging basert på aktiv fane og rolle */}
           {currentTab === 'calendar' && (
-            <CalendarView />
+            <UserCalendarView 
+              onNavigateToBooking={(dateStr) => {
+                setBookingInitialDate(dateStr);
+                setCurrentTab('booking');
+              }} 
+            />
+          )}
+
+          {currentTab === 'booking' && (
+            <BookingView 
+              onNavigateToCalendar={() => setCurrentTab('calendar')}
+              onNavigateToDashboard={() => setCurrentTab('dashboard')}
+              initialDate={bookingInitialDate}
+            />
           )}
 
           {currentTab === 'clients' && (currentUser.role === 'hovedadmin' || currentUser.role === 'admin') && (
@@ -68,7 +83,13 @@ const AppContent: React.FC = () => {
           {currentTab === 'dashboard' && (
             <>
               {currentUser.role === 'client' ? (
-                <ClientDashboard onNavigateToCalendar={() => setCurrentTab('calendar')} />
+                <ClientDashboard 
+                  onNavigateToCalendar={() => setCurrentTab('calendar')}
+                  onNavigateToBooking={() => {
+                    setBookingInitialDate(undefined);
+                    setCurrentTab('booking');
+                  }}
+                />
               ) : (
                 <AdminDashboard onNavigateToCalendar={() => setCurrentTab('calendar')} />
               )}
@@ -100,6 +121,19 @@ const AppContent: React.FC = () => {
         >
           <CalendarIcon className="w-5 h-5 mb-0.5 flex-shrink-0" />
           <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Kalender</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setBookingInitialDate(undefined);
+            setCurrentTab('booking');
+          }}
+          className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
+            currentTab === 'booking' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <CalendarPlus className="w-5 h-5 mb-0.5 flex-shrink-0" />
+          <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Bestill</span>
         </button>
 
         {(currentUser.role === 'hovedadmin' || currentUser.role === 'admin') && (

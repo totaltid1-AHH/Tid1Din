@@ -14,7 +14,9 @@ import {
   CheckCircle2, 
   ExternalLink, 
   X,
-  User
+  User,
+  ChevronDown,
+  XCircle
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { format, isPast } from 'date-fns';
@@ -24,9 +26,10 @@ import { UserProfile } from '../../types';
 
 interface ClientDashboardProps {
   onNavigateToCalendar: () => void;
+  onNavigateToBooking?: () => void;
 }
 
-export const ClientDashboard: React.FC<ClientDashboardProps> = ({ onNavigateToCalendar }) => {
+export const ClientDashboard: React.FC<ClientDashboardProps> = ({ onNavigateToCalendar, onNavigateToBooking }) => {
   const { currentUser } = useAuth();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [therapists, setTherapists] = useState<UserProfile[]>([]);
@@ -34,6 +37,10 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ onNavigateToCa
   const [cancellingAptId, setCancellingAptId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+
+  // Filtre for tidligere og avbestilte timer i oversikt
+  const [showPastApts, setShowPastApts] = useState(false);
+  const [showCancelledApts, setShowCancelledApts] = useState(false);
 
   useEffect(() => {
     loadAppointments();
@@ -221,12 +228,21 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ onNavigateToCa
   );
   const nextAppointment = upcomingApts[0] || null;
   const otherUpcoming = upcomingApts.slice(1);
+
+  // 1. Tidligere timer (fullførte eller passerte, ekskludert avbestilte)
   const pastApts = appointments.filter(
-    a => a.status === 'completed' || isPast(new Date(`${a.date}T${a.endTime}`)) || a.status === 'cancelled'
-  );
+    a => a.status !== 'cancelled' && (a.status === 'completed' || isPast(new Date(`${a.date}T${a.endTime}`)))
+  ).sort((a, b) => new Date(`${b.date}T${b.startTime}`).getTime() - new Date(`${a.date}T${a.startTime}`).getTime());
+
+  // 2. Avlyste og avbestilte timer
+  const cancelledApts = appointments.filter(
+    a => a.status === 'cancelled'
+  ).sort((a, b) => new Date(`${b.date}T${b.startTime}`).getTime() - new Date(`${a.date}T${a.startTime}`).getTime());
+
+  const handleBookClick = onNavigateToBooking || onNavigateToCalendar;
 
   return (
-    <div className="space-y-2.5 sm:space-y-6 w-full">
+    <div className="space-y-3 sm:space-y-6 w-full">
       
       {/* Velkomstbanner - full bredde på mobil */}
       <div className="bg-gradient-to-r from-sky-700 via-sky-600 to-cyan-600 rounded-none sm:rounded-3xl p-4 sm:p-7 text-white shadow-sm w-full">
@@ -235,11 +251,14 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ onNavigateToCa
             <h1 className="text-lg sm:text-2xl font-bold tracking-tight">
               Hei, {currentUser?.displayName}!
             </h1>
+            <p className="text-xs sm:text-sm text-sky-100 mt-0.5">
+              Velkommen til din pasientoversikt hos Tid1Din.
+            </p>
           </div>
 
           <button
-            onClick={onNavigateToCalendar}
-            className="px-3.5 py-2 rounded-xl bg-white text-sky-700 font-bold text-xs shadow-sm hover:bg-sky-50 transition-all flex items-center gap-1.5 flex-shrink-0"
+            onClick={handleBookClick}
+            className="px-3.5 py-2 rounded-xl bg-white text-sky-700 font-bold text-xs shadow-sm hover:bg-sky-50 transition-all flex items-center gap-1.5 flex-shrink-0 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             Bestill time
@@ -262,9 +281,14 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ onNavigateToCa
       {/* Neste Time Kort - Full bredde */}
       {nextAppointment ? (
         <div className="bg-white rounded-none sm:rounded-3xl p-4 sm:p-6 border-y sm:border border-slate-200 shadow-xs w-full">
-          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-sky-700 mb-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            Din neste time
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-sky-700">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              Din neste time
+            </div>
+            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+              Bekreftet
+            </span>
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -300,7 +324,7 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ onNavigateToCa
                   ) : (
                     <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
                       <MapPin className="w-3.5 h-3.5" />
-                      Oppmøte
+                      Fysisk oppmøte
                     </span>
                   )}
                 </span>
@@ -308,6 +332,12 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ onNavigateToCa
                 <span>•</span>
                 <span className="font-semibold text-slate-800">kr {nextAppointment.price},-</span>
               </div>
+
+              {nextAppointment.notes && (
+                <p className="text-xs text-slate-500 italic mt-1">
+                  Beskjed: {nextAppointment.notes}
+                </p>
+              )}
 
               {nextAppointment.isOnline && nextAppointment.meetingLink && (
                 <div className="pt-1.5">
@@ -327,7 +357,7 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ onNavigateToCa
 
             <button
               onClick={() => setCancellingAptId(nextAppointment.id)}
-              className="self-start sm:self-center px-3 py-1.5 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-semibold flex items-center gap-1"
+              className="self-start sm:self-center px-3 py-1.5 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-semibold flex items-center gap-1 cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
               Avbestill
@@ -339,99 +369,138 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ onNavigateToCa
           <Calendar className="w-8 h-8 text-slate-300 mx-auto" />
           <h3 className="text-sm font-bold text-slate-800">Ingen aktive timeavtaler</h3>
           <p className="text-xs text-slate-500">
-            Velg en ledig tid i kalenderen for å bestille time.
+            Du har for øyeblikket ingen aktive eller kommende timebestillinger.
           </p>
           <button
-            onClick={onNavigateToCalendar}
-            className="mt-1 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sky-600 text-white font-semibold text-xs shadow-sm"
+            onClick={handleBookClick}
+            className="mt-1 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs shadow-sm transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            Bestill time
+            Bestill time nå
           </button>
         </div>
       )}
 
-      {/* Kommende timer & Historikk */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-5 w-full">
-        
-        {/* Kommende timer */}
+      {/* Flere kommende timer (hvis mer enn 1 time) */}
+      {otherUpcoming.length > 0 && (
         <div className="bg-white rounded-none sm:rounded-3xl p-3.5 sm:p-5 border-y sm:border border-slate-200 shadow-xs space-y-2.5 w-full">
           <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
             <Calendar className="w-3.5 h-3.5 text-sky-600" />
             Flere kommende timer ({otherUpcoming.length})
           </h3>
 
-          {otherUpcoming.length === 0 ? (
-            <p className="text-xs text-slate-400 py-3 text-center">Ingen flere timer på planen.</p>
-          ) : (
-            <div className="space-y-1.5">
-              {otherUpcoming.map(apt => {
-                const tName = getTherapistNameForApt(apt);
-                return (
-                  <div key={apt.id} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-                    <div>
-                      <p className="font-bold text-slate-800 capitalize">
-                        {format(new Date(apt.date), 'EEEE d. MMMM', { locale: nb })}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 mt-0.5">
-                        {tName && (
-                          <>
-                            <span className="font-semibold text-slate-700 flex items-center gap-1">
-                              <User className="w-3 h-3 text-sky-600" />
-                              {tName}
-                            </span>
-                            <span>•</span>
-                          </>
-                        )}
-                        <span>{apt.startTime} - {apt.endTime}</span>
-                        <span>•</span>
-                        <span>{apt.isOnline ? 'Online' : 'Fysisk'}</span>
-                      </div>
+          <div className="space-y-1.5">
+            {otherUpcoming.map(apt => {
+              const tName = getTherapistNameForApt(apt);
+              return (
+                <div key={apt.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                  <div>
+                    <p className="font-bold text-slate-800 capitalize">
+                      {format(new Date(apt.date), 'EEEE d. MMMM yyyy', { locale: nb })}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 mt-0.5">
+                      {tName && (
+                        <>
+                          <span className="font-semibold text-slate-700 flex items-center gap-1">
+                            <User className="w-3 h-3 text-sky-600" />
+                            {tName}
+                          </span>
+                          <span>•</span>
+                        </>
+                      )}
+                      <span className="font-mono font-medium text-slate-800">{apt.startTime} - {apt.endTime}</span>
+                      <span>•</span>
+                      <span>{apt.isOnline ? 'Online videomøte' : 'Fysisk'}</span>
+                      <span>•</span>
+                      <span className="font-semibold text-slate-700">kr {apt.price},-</span>
                     </div>
-                    <button
-                      onClick={() => setCancellingAptId(apt.id)}
-                      className="text-rose-600 hover:text-rose-800 font-medium px-2 py-1 cursor-pointer"
-                    >
-                      Avbestill
-                    </button>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                  <button
+                    onClick={() => setCancellingAptId(apt.id)}
+                    className="text-rose-600 hover:text-rose-800 font-medium px-2 py-1 cursor-pointer border border-rose-200 rounded-lg hover:bg-rose-50"
+                  >
+                    Avbestill
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
+      )}
 
-        {/* Historikk */}
-        <div className="bg-white rounded-none sm:rounded-3xl p-3.5 sm:p-5 border-y sm:border border-slate-200 shadow-xs space-y-2.5 w-full">
-          <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5 text-slate-500" />
-            Tidligere timer ({pastApts.length})
-          </h3>
+      {/* Handlingsknapper for å vise tidligere og avbestilte timer */}
+      <div className="flex flex-wrap items-center gap-2.5 pt-1">
+        <button
+          type="button"
+          onClick={() => setShowPastApts(!showPastApts)}
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-2 cursor-pointer ${
+            showPastApts 
+              ? 'bg-slate-900 text-white border-slate-900 shadow-sm' 
+              : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-200 shadow-xs'
+          }`}
+        >
+          <Clock className="w-3.5 h-3.5 text-sky-500" />
+          <span>{showPastApts ? 'Skjul tidligere timer' : `Vis tidligere (${pastApts.length})`}</span>
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showPastApts ? 'rotate-180' : ''}`} />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowCancelledApts(!showCancelledApts)}
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-2 cursor-pointer ${
+            showCancelledApts 
+              ? 'bg-rose-800 text-white border-rose-800 shadow-sm' 
+              : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-200 shadow-xs'
+          }`}
+        >
+          <XCircle className={`w-3.5 h-3.5 ${showCancelledApts ? 'text-white' : 'text-rose-500'}`} />
+          <span>{showCancelledApts ? 'Skjul avbestilte timer' : `Vis avbestilte (${cancelledApts.length})`}</span>
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showCancelledApts ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+
+      {/* TIDLIGERE TIMER (KUN SYNLIG VED TRYKK PÅ «VIS TIDLIGERE») */}
+      {showPastApts && (
+        <div className="bg-white rounded-none sm:rounded-3xl p-4 sm:p-5 border-y sm:border border-slate-200 shadow-xs space-y-3 w-full animate-in fade-in duration-150">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
+              <Clock className="w-4 h-4 text-sky-600" />
+              Tidligere gjennomførte timer ({pastApts.length})
+            </h3>
+            <span className="text-[11px] text-slate-400">Sortert nyeste først</span>
+          </div>
 
           {pastApts.length === 0 ? (
-            <p className="text-xs text-slate-400 py-3 text-center">Ingen tidligere timer.</p>
+            <p className="text-xs text-slate-400 py-4 text-center italic">Ingen tidligere timer registrert.</p>
           ) : (
-            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
+            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
               {pastApts.map(apt => {
                 const tName = getTherapistNameForApt(apt);
                 return (
-                  <div key={apt.id} className="p-2 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs opacity-85">
+                  <div key={apt.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
                     <div>
                       <div className="font-semibold text-slate-800 flex items-center gap-1.5 flex-wrap">
-                        <span>{format(new Date(apt.date), 'd. MMM yyyy', { locale: nb })} ({apt.startTime})</span>
+                        <span>{format(new Date(apt.date), 'EEEE d. MMMM yyyy', { locale: nb })}</span>
+                        <span className="font-mono text-slate-500 font-normal">kl. {apt.startTime} - {apt.endTime}</span>
                         {tName && (
                           <>
                             <span className="text-slate-300">•</span>
-                            <span className="font-medium text-slate-700">{tName}</span>
+                            <span className="font-medium text-slate-700 flex items-center gap-1">
+                              <User className="w-3 h-3 text-sky-600" />
+                              {tName}
+                            </span>
                           </>
                         )}
                       </div>
-                      <span className="text-[11px] text-slate-500">kr {apt.price},-</span>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
+                        <span>{apt.isOnline ? 'Videomøte' : 'Fysisk'}</span>
+                        <span>•</span>
+                        <span>kr {apt.price},-</span>
+                        {apt.notes && <span>• Notat: {apt.notes}</span>}
+                      </div>
                     </div>
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-                      apt.status === 'cancelled' ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-700'
-                    }`}>
-                      {apt.status === 'cancelled' ? 'Avbestilt' : 'Gjennomført'}
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-200 text-slate-700 flex-shrink-0">
+                      Gjennomført
                     </span>
                   </div>
                 );
@@ -439,8 +508,58 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ onNavigateToCa
             </div>
           )}
         </div>
+      )}
 
-      </div>
+      {/* AVLYSTE OG AVBESTILTE TIMER (KUN SYNLIG VED TRYKK PÅ «VIS AVBESTILTE») */}
+      {showCancelledApts && (
+        <div className="bg-white rounded-none sm:rounded-3xl p-4 sm:p-5 border-y sm:border border-rose-200 shadow-xs space-y-3 w-full animate-in fade-in duration-150">
+          <div className="flex items-center justify-between pb-2 border-b border-rose-100">
+            <h3 className="text-xs sm:text-sm font-bold text-rose-900 flex items-center gap-1.5">
+              <XCircle className="w-4 h-4 text-rose-600" />
+              Avbestilte og avlyste timer ({cancelledApts.length})
+            </h3>
+            <span className="text-[11px] text-rose-600 font-medium">Historikk</span>
+          </div>
+
+          {cancelledApts.length === 0 ? (
+            <p className="text-xs text-slate-400 py-4 text-center italic">Ingen avbestilte timer registrert.</p>
+          ) : (
+            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+              {cancelledApts.map(apt => {
+                const tName = getTherapistNameForApt(apt);
+                return (
+                  <div key={apt.id} className="p-3 rounded-xl bg-rose-50/50 border border-rose-200 flex items-center justify-between text-xs">
+                    <div>
+                      <div className="font-semibold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                        <span className="line-through text-slate-500">{format(new Date(apt.date), 'EEEE d. MMMM yyyy', { locale: nb })}</span>
+                        <span className="font-mono text-slate-400 font-normal">kl. {apt.startTime}</span>
+                        {tName && (
+                          <>
+                            <span className="text-slate-300">•</span>
+                            <span className="font-medium text-slate-600">{tName}</span>
+                          </>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
+                        <span>{apt.isOnline ? 'Online' : 'Fysisk'}</span>
+                        {apt.cancellationReason && (
+                          <>
+                            <span>•</span>
+                            <span className="text-rose-700 font-medium">Årsak: {apt.cancellationReason}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200 flex-shrink-0">
+                      Avbestilt
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* GDPR Dataeksport */}
       <div className="bg-white rounded-none sm:rounded-2xl p-3.5 sm:p-4 border-y sm:border border-slate-200 flex items-center justify-between w-full">

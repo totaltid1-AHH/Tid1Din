@@ -9,6 +9,7 @@ import {
   Users, 
   Settings, 
   Calendar as CalendarIcon, 
+  CalendarPlus,
   LayoutDashboard,
   CheckCircle2, 
   Sparkles,
@@ -85,7 +86,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
           }`}
         >
           <CalendarIcon className="w-4.5 h-4.5 flex-shrink-0" />
-          <span>Kalender & Booking</span>
+          <span>Kalender</span>
+        </button>
+
+        <button
+          onClick={() => handleNavClick('booking')}
+          className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+            currentTab === 'booking'
+              ? 'bg-sky-600 text-white shadow-sm shadow-sky-600/30'
+              : 'text-slate-300 hover:text-white hover:bg-slate-900'
+          }`}
+        >
+          <CalendarPlus className="w-4.5 h-4.5 flex-shrink-0" />
+          <span>Bestill time</span>
         </button>
 
         {(currentUser.role === 'hovedadmin' || currentUser.role === 'admin') && (
