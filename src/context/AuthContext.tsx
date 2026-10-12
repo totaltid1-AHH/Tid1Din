@@ -39,16 +39,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (savedUid) {
           const user = await dbService.getUserById(savedUid);
           if (user) {
-            setCurrentUser(user);
-          }
-        } else {
-          // Standard demo-innlogging: Hovedadmin for enkel oppstart
-          const user = await dbService.getUserById('u_hovedadmin');
-          if (user) {
-            setCurrentUser(user);
-            localStorage.setItem('dintid_active_uid', user.uid);
+            if (user.role === 'client') {
+              // Klient-innlogging er satt på pause
+              localStorage.removeItem('dintid_active_uid');
+              setCurrentUser(null);
+            } else {
+              setCurrentUser(user);
+            }
           }
         }
+        // Ingen auto-innlogging – brukeren må logge inn manuelt
       } catch (e) {
         console.error('Feil under initialisering av autentisering:', e);
       } finally {
@@ -59,12 +59,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
   }, []);
 
-  const login = async (email: string, _password?: string) => {
+  const login = async (identifier: string, password?: string) => {
     const users = await dbService.getUsers();
-    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    // Aksepter innlogging med e-post eller brukernavn
+    const user = users.find(u =>
+      u.email.toLowerCase() === identifier.toLowerCase() ||
+      (u.username && u.username.toLowerCase() === identifier.toLowerCase())
+    );
 
     if (!user) {
-      return { success: false, requires2FA: false, error: 'Fant ingen bruker med denne e-postadressen' };
+      return { success: false, requires2FA: false, error: 'Feil brukernavn/e-post eller passord' };
+    }
+
+    // Klient-innlogging er satt på pause
+    if (user.role === 'client') {
+      return { 
+        success: false, 
+        requires2FA: false, 
+        error: 'Klient-innlogging er midlertidig satt på pause. Kun behandlere og terapeuter kan logge inn for øyeblikket.' 
+      };
+    }
+
+    // Passord-sjekk: hopp over hvis ingen passord er satt (bakoverkompatibilitet) eller ved demo-hurtigvalg
+    if (user.password && password !== undefined && user.password !== password) {
+      return { success: false, requires2FA: false, error: 'Feil brukernavn/e-post eller passord' };
     }
 
     // Hvis bruker har 2FA aktivert, be om engangskode
@@ -79,7 +97,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await dbService.logAction(
       { uid: user.uid, email: user.email, role: user.role },
       'login',
-      `Bruker ${user.displayName} logget inn uten 2FA`
+      `Bruker ${user.displayName} logget inn`
     );
     return { success: true, requires2FA: false };
   };
@@ -154,7 +172,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       address: data.address,
       birthDate: data.birthDate,
       notes: data.notes || '',
-      twoFactorEnabled: true,
+      twoFactorEnabled: false,
       createdAt: new Date().toISOString()
     };
 

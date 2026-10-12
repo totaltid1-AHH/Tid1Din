@@ -31,9 +31,23 @@ interface ClientDashboardProps {
 
 export const ClientDashboard: React.FC<ClientDashboardProps> = ({ onNavigateToCalendar, onNavigateToBooking }) => {
   const { currentUser } = useAuth();
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [therapists, setTherapists] = useState<UserProfile[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [appointments, setAppointments] = useState<Appointment[]>(() => {
+    if (!currentUser) return [];
+    const all = dbService.getCachedAppointments();
+    return all.filter(a => a.clientId === currentUser.uid).sort((a, b) => {
+      const dateA = new Date(`${a.date}T${a.startTime}`);
+      const dateB = new Date(`${b.date}T${b.startTime}`);
+      return dateA.getTime() - dateB.getTime();
+    });
+  });
+  const [therapists, setTherapists] = useState<UserProfile[]>(() => 
+    dbService.getCachedUsers().filter(u => u.role === 'admin' || u.role === 'hovedadmin')
+  );
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    if (!currentUser) return false;
+    const all = dbService.getCachedAppointments();
+    return all.length === 0;
+  });
   const [cancellingAptId, setCancellingAptId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
@@ -44,11 +58,31 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ onNavigateToCa
 
   useEffect(() => {
     loadAppointments();
+
+    const handleDataUpdate = (e: any) => {
+      const type = e?.detail?.type;
+      if (type === 'appointments' || !type) {
+        if (currentUser) {
+          const all = dbService.getCachedAppointments();
+          const clientApts = all.filter(a => a.clientId === currentUser.uid).sort((a, b) => {
+            const dateA = new Date(`${a.date}T${a.startTime}`);
+            const dateB = new Date(`${b.date}T${b.startTime}`);
+            return dateA.getTime() - dateB.getTime();
+          });
+          setAppointments(clientApts);
+        }
+      }
+      if (type === 'users' || !type) {
+        setTherapists(dbService.getCachedUsers().filter(u => u.role === 'admin' || u.role === 'hovedadmin'));
+      }
+    };
+
+    window.addEventListener('dintid_data_updated', handleDataUpdate);
+    return () => window.removeEventListener('dintid_data_updated', handleDataUpdate);
   }, [currentUser?.uid]);
 
   const loadAppointments = async () => {
     if (!currentUser) return;
-    setIsLoading(true);
     const [clientApts, allUsers] = await Promise.all([
       dbService.getAppointmentsByClient(currentUser.uid),
       dbService.getUsers()

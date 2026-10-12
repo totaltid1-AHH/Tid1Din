@@ -46,9 +46,19 @@ export const UserCalendarView: React.FC<UserCalendarViewProps> = ({ onNavigateTo
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
   
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [therapists, setTherapists] = useState<UserProfile[]>([]);
-  const [selectedTherapistId, setSelectedTherapistId] = useState<string>('');
+  const cachedUsers = dbService.getCachedUsers();
+  const availableCachedTherapists = cachedUsers.filter(u => 
+    (u.role === 'admin' || u.role === 'hovedadmin') &&
+    (currentUser?.role !== 'client' || u.isActive !== false || !!u.leaveEndDate)
+  );
+
+  const initialTherapistId = (currentUser?.role === 'admin' || currentUser?.role === 'hovedadmin')
+    ? (availableCachedTherapists.some(t => t.uid === currentUser.uid) ? currentUser.uid : (availableCachedTherapists[0]?.uid || ''))
+    : (availableCachedTherapists[0]?.uid || '');
+
+  const [appointments, setAppointments] = useState<Appointment[]>(() => dbService.getCachedAppointments());
+  const [therapists, setTherapists] = useState<UserProfile[]>(availableCachedTherapists);
+  const [selectedTherapistId, setSelectedTherapistId] = useState<string>(initialTherapistId);
   const [isDayModalOpen, setIsDayModalOpen] = useState(false);
   const [cancellingAptId, setCancellingAptId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
@@ -58,11 +68,31 @@ export const UserCalendarView: React.FC<UserCalendarViewProps> = ({ onNavigateTo
 
   useEffect(() => {
     loadData();
+
+    const handleDataUpdate = (e: any) => {
+      const type = e?.detail?.type;
+      if (type === 'appointments' || !type) {
+        setAppointments(dbService.getCachedAppointments());
+      }
+      if (type === 'users' || !type) {
+        const uList = dbService.getCachedUsers();
+        const avail = uList.filter(u => 
+          (u.role === 'admin' || u.role === 'hovedadmin') &&
+          (currentUser?.role !== 'client' || u.isActive !== false || !!u.leaveEndDate)
+        );
+        setTherapists(avail);
+      }
+    };
+
+    window.addEventListener('dintid_data_updated', handleDataUpdate);
+    return () => window.removeEventListener('dintid_data_updated', handleDataUpdate);
   }, [currentUser?.uid]);
 
   const loadData = async () => {
-    const apts = await dbService.getAppointments();
-    const users = await dbService.getUsers();
+    const [apts, users] = await Promise.all([
+      dbService.getAppointments(),
+      dbService.getUsers()
+    ]);
     setAppointments(apts);
 
     const availableTherapists = users.filter(u => 
@@ -130,7 +160,7 @@ export const UserCalendarView: React.FC<UserCalendarViewProps> = ({ onNavigateTo
     }
     // For behandler/admin: vis avtaler knyttet til valgt behandler
     if (selectedTherapistId) {
-      return a.therapistId === selectedTherapistId;
+      return a.therapistId === selectedTherapistId || (!a.therapistId && therapists[0]?.uid === selectedTherapistId);
     }
     return true;
   });

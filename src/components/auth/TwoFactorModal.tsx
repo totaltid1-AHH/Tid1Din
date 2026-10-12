@@ -44,9 +44,6 @@ export const TwoFactorModal: React.FC = () => {
             <ShieldCheck className="w-9 h-9" />
           </div>
           <h3 className="text-xl font-bold text-slate-900">2-faktor autentisering</h3>
-          <p className="text-sm text-slate-600 mt-1">
-            Tid1Din krever ekstra sikkerhetsbekreftelse for å beskytte sensitive pasient- og klientdata.
-          </p>
           <p className="text-xs font-semibold text-slate-500 mt-2 bg-slate-50 py-1.5 px-3 rounded-lg inline-block border border-slate-200">
             Logget inn som: <span className="text-slate-800">{pendingUser.displayName}</span>
           </p>

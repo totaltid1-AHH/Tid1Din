@@ -24,12 +24,18 @@ import { nb } from 'date-fns/locale';
 
 interface AdminDashboardProps {
   onNavigateToCalendar: () => void;
+  onNavigateToJournal?: (clientId: string) => void;
 }
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToCalendar }) => {
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ 
+  onNavigateToCalendar,
+  onNavigateToJournal 
+}) => {
   const { currentUser } = useAuth();
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [clients, setClients] = useState<UserProfile[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>(() => dbService.getCachedAppointments());
+  const [clients, setClients] = useState<UserProfile[]>(() => 
+    dbService.getCachedUsers().filter(u => u.role === 'client')
+  );
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedJournalClient, setSelectedJournalClient] = useState<UserProfile | null>(null);
   const [selectedJournalAppointment, setSelectedJournalAppointment] = useState<Appointment | null>(null);
@@ -48,11 +54,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToCale
 
   useEffect(() => {
     loadData();
+
+    const handleDataUpdate = (e: any) => {
+      const type = e?.detail?.type;
+      if (type === 'appointments' || !type) {
+        setAppointments(dbService.getCachedAppointments());
+      }
+      if (type === 'users' || !type) {
+        setClients(dbService.getCachedUsers().filter(u => u.role === 'client'));
+      }
+    };
+
+    window.addEventListener('dintid_data_updated', handleDataUpdate);
+    return () => window.removeEventListener('dintid_data_updated', handleDataUpdate);
   }, []);
 
   const loadData = async () => {
-    const apts = await dbService.getAppointments();
-    const users = await dbService.getUsers();
+    const [apts, users] = await Promise.all([
+      dbService.getAppointments(),
+      dbService.getUsers()
+    ]);
     setAppointments(apts);
     setClients(users.filter(u => u.role === 'client'));
   };
@@ -67,6 +88,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateToCale
   };
 
   const handleOpenJournalForClient = (clientId: string, apt?: Appointment) => {
+    if (onNavigateToJournal) {
+      onNavigateToJournal(clientId);
+      return;
+    }
     const client = clients.find(c => c.uid === clientId);
     if (client) {
       setSelectedJournalClient(client);

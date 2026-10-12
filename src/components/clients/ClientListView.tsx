@@ -23,7 +23,11 @@ import {
   MessageSquare
 } from 'lucide-react';
 
-export const ClientListView: React.FC = () => {
+interface ClientListViewProps {
+  onOpenJournal?: (clientId: string) => void;
+}
+
+export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal }) => {
   const { currentUser, registerClient } = useAuth();
   const [clients, setClients] = useState<UserProfile[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -188,7 +192,7 @@ export const ClientListView: React.FC = () => {
         <div>
           <h1 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-1.5">
             <Users className="w-5 h-5 text-sky-600" />
-            Klienter & Journaler
+            Klienter
           </h1>
           <p className="text-[11px] text-slate-500">Kundenummer starter på 1000.</p>
         </div>
@@ -263,8 +267,12 @@ export const ClientListView: React.FC = () => {
                       key={client.uid}
                       onClick={() => {
                         if (canEditJournals) {
-                          setSelectedJournalClient(client);
-                          setIsJournalOpen(true);
+                          if (onOpenJournal) {
+                            onOpenJournal(client.uid);
+                          } else {
+                            setSelectedJournalClient(client);
+                            setIsJournalOpen(true);
+                          }
                         }
                       }}
                       className={`hover:bg-sky-50/60 transition-colors cursor-pointer ${isDeactivated ? 'bg-slate-50/50 opacity-75' : ''}`}
@@ -367,8 +375,12 @@ export const ClientListView: React.FC = () => {
                           {canEditJournals ? (
                             <button
                               onClick={() => {
-                                setSelectedJournalClient(client);
-                                setIsJournalOpen(true);
+                                if (onOpenJournal) {
+                                  onOpenJournal(client.uid);
+                                } else {
+                                  setSelectedJournalClient(client);
+                                  setIsJournalOpen(true);
+                                }
                               }}
                               className="px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 font-semibold text-xs flex items-center gap-1 transition-colors border border-sky-200 shadow-xs"
                               title="Åpne journal og notater"

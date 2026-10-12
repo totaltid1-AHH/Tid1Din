@@ -11,6 +11,8 @@ export interface AdminPermissions {
 export interface UserProfile {
   uid: string;
   email: string;
+  username?: string; // Valgfritt brukernavn for innlogging (alternativ til e-post)
+  password?: string; // Lagret som klartekst i demo; bytt til hash i produksjon
   role: UserRole;
   displayName: string;
   phone?: string;

@@ -70,6 +70,7 @@ export const SuperAdminPanel: React.FC = () => {
 
   const [isNewAdminOpen, setIsNewAdminOpen] = useState(false);
   const [newAdminName, setNewAdminName] = useState('');
+  const [newAdminUsername, setNewAdminUsername] = useState('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
 
   // Redigering av terapeut
@@ -109,12 +110,12 @@ export const SuperAdminPanel: React.FC = () => {
     loadAllAdminData();
   }, [currentUser?.uid]);
 
-  const loadAllAdminData = async () => {
+  const loadAllAdminData = async (targetIdOverride?: string) => {
     const allUsers = await dbService.getUsers();
     const availableTherapists = allUsers.filter(u => u.role === 'admin' || u.role === 'hovedadmin');
 
-    // Forhåndsvalg av terapeut: terapeuten selv hvis admin, ellers første i listen
-    let targetTherapistId = selectedTherapistId;
+    // Forhåndsvalg av terapeut: behold aktivt valgt terapeut dersom gyldig, ellers innlogget admin, ellers første
+    let targetTherapistId = targetIdOverride || selectedTherapistId;
     if (!targetTherapistId || !availableTherapists.some(t => t.uid === targetTherapistId)) {
       if (currentUser && availableTherapists.some(t => t.uid === currentUser.uid)) {
         targetTherapistId = currentUser.uid;
@@ -430,9 +431,10 @@ export const SuperAdminPanel: React.FC = () => {
     const newAdmin: UserProfile = {
       uid: 'u_admin_' + Date.now(),
       email: newAdminEmail,
+      username: newAdminUsername.trim() || undefined,
       role: 'admin',
       displayName: newAdminName,
-      twoFactorEnabled: true,
+      twoFactorEnabled: false,
       permissions: {
         canViewClientName: true,
         canViewClientPhone: false,
@@ -446,8 +448,10 @@ export const SuperAdminPanel: React.FC = () => {
     await dbService.saveUser(newAdmin);
     setIsNewAdminOpen(false);
     setNewAdminName('');
+    setNewAdminUsername('');
     setNewAdminEmail('');
     await loadAllAdminData();
+
   };
 
   const handleSaveSmsSettings = async () => {
@@ -534,11 +538,8 @@ export const SuperAdminPanel: React.FC = () => {
             <div>
               <h2 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
                 <Users className="w-4.5 h-4.5 text-sky-600" />
-                Terapeutliste & Personell
+                Terapeutliste &amp; Personell
               </h2>
-              <p className="text-xs text-slate-500">
-                Oversikt over klinikkens behandlere og administratorer med status og tilgangsrettigheter.
-              </p>
             </div>
             <button
               onClick={() => setIsNewAdminOpen(true)}
@@ -727,11 +728,8 @@ export const SuperAdminPanel: React.FC = () => {
               <div>
                 <h2 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
                   <Clock className="w-4 h-4 text-sky-600" />
-                  Arbeidstid, Pauser & Priser
+                  Arbeidstid, Pauser &amp; Priser
                 </h2>
-                <p className="text-[11px] text-slate-500">
-                  Hver terapeut har egne tilpassede arbeidstider, pauser og priser.
-                </p>
               </div>
 
               <button
@@ -816,9 +814,6 @@ export const SuperAdminPanel: React.FC = () => {
                       <Clock className="w-4 h-4 text-slate-600" />
                       Faste arbeidsdager og klokkeslett (Mal)
                     </h4>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      Sett faste dager og standard arbeidstid fra/til før du redigerer hver dag i kalenderen under.
-                    </p>
                   </div>
 
                   {workingHours.isScheduleApproved && (
@@ -942,9 +937,6 @@ export const SuperAdminPanel: React.FC = () => {
                           <CalendarIcon className="w-4 h-4 text-sky-600" />
                           Arbeidstidskalender (Rediger hver dag for seg)
                         </h3>
-                        <p className="text-[11px] text-slate-500 mt-0.5">
-                          Klikk på en dato i kalenderen for å endre arbeidstid eller sette som fridag.
-                        </p>
                       </div>
 
                       <div className="flex items-center gap-2">
@@ -1219,9 +1211,6 @@ export const SuperAdminPanel: React.FC = () => {
                 <label className="block text-[11px] font-bold text-slate-700 uppercase">
                   Fast lunsjpause
                 </label>
-                <p className="text-[11px] text-slate-500">
-                  Blokkerer automatisk dette tidsrommet hver arbeidsdag slik at det ikke kan bookes time da.
-                </p>
                 <div className="grid grid-cols-2 gap-2 text-xs max-w-sm">
                   <div>
                     <span className="text-[10px] text-slate-500 font-semibold">Lunsj start</span>
@@ -1265,9 +1254,6 @@ export const SuperAdminPanel: React.FC = () => {
                 <label className="block text-[11px] font-bold text-slate-700 uppercase">
                   Timepriser (i kr)
                 </label>
-                <p className="text-[11px] text-slate-500">
-                  Priser som belastes og vises for klienter ved bestilling hos denne terapeuten.
-                </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
                   <div className="p-2.5 rounded-xl border border-slate-200 bg-slate-50/50">
@@ -1386,11 +1372,8 @@ export const SuperAdminPanel: React.FC = () => {
                   <div>
                     <label className="block text-[11px] font-bold text-slate-700 uppercase flex items-center gap-1.5">
                       <Palmtree className="w-3.5 h-3.5 text-amber-600" />
-                      Ferie & Fravær i kalender
+                      Ferie &amp; Fravær i kalender
                     </label>
-                    <p className="text-[11px] text-slate-500">
-                      Registrer ferieuker eller fridager. Disse datoene blokkeres automatisk mot timebestilling i kalenderen.
-                    </p>
                   </div>
 
                   {!isAddingHoliday && (
@@ -1703,36 +1686,61 @@ export const SuperAdminPanel: React.FC = () => {
       {/* Modal: Ny admin */}
       {isNewAdminOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-5 max-w-sm w-full space-y-3">
-            <h3 className="text-base font-bold text-slate-900">Opprett administrator</h3>
-            <form onSubmit={handleCreateAdmin} className="space-y-2.5 text-xs">
-              <input
-                type="text"
-                required
-                value={newAdminName}
-                onChange={(e) => setNewAdminName(e.target.value)}
-                placeholder="Navn"
-                className="w-full px-3 py-2 rounded-xl border border-slate-300"
-              />
-              <input
-                type="email"
-                required
-                value={newAdminEmail}
-                onChange={(e) => setNewAdminEmail(e.target.value)}
-                placeholder="E-post"
-                className="w-full px-3 py-2 rounded-xl border border-slate-300"
-              />
-              <div className="flex gap-2 pt-1">
+          <div className="bg-white rounded-2xl p-5 max-w-sm w-full space-y-4 border border-slate-200 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900">Opprett administrator</h3>
+              <button
+                type="button"
+                onClick={() => { setIsNewAdminOpen(false); setNewAdminName(''); setNewAdminUsername(''); setNewAdminEmail(''); }}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleCreateAdmin} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Fullt navn *</label>
+                <input
+                  type="text"
+                  required
+                  value={newAdminName}
+                  onChange={(e) => setNewAdminName(e.target.value)}
+                  placeholder="Jonas Berg"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Brukernavn</label>
+                <input
+                  type="text"
+                  value={newAdminUsername}
+                  onChange={(e) => setNewAdminUsername(e.target.value)}
+                  placeholder="jonas"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">E-post *</label>
+                <input
+                  type="email"
+                  required
+                  value={newAdminEmail}
+                  onChange={(e) => setNewAdminEmail(e.target.value)}
+                  placeholder="jonas@klinikk.no"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setIsNewAdminOpen(false)}
-                  className="w-1/2 py-2 rounded-xl border border-slate-300"
+                  onClick={() => { setIsNewAdminOpen(false); setNewAdminName(''); setNewAdminUsername(''); setNewAdminEmail(''); }}
+                  className="w-1/2 py-2 rounded-xl border border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 cursor-pointer"
                 >
                   Avbryt
                 </button>
                 <button
                   type="submit"
-                  className="w-1/2 py-2 rounded-xl bg-indigo-600 text-white font-bold"
+                  className="w-1/2 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold cursor-pointer"
                 >
                   Opprett
                 </button>
@@ -1741,6 +1749,7 @@ export const SuperAdminPanel: React.FC = () => {
           </div>
         </div>
       )}
+
 
       {/* MODAL FOR Å SETTE PERMISJON (MED FRA- OG TIL-DATO) */}
       {leaveModalTherapistUid && (() => {
@@ -1771,9 +1780,6 @@ export const SuperAdminPanel: React.FC = () => {
               </div>
 
               <form onSubmit={handleSaveLeavePeriod} className="space-y-4 py-4">
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  Angi tidsrommet for permisjonen. I denne perioden vil timebestilling hos denne behandleren være sperret.
-                </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>

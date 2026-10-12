@@ -30,7 +30,8 @@ import {
   Palmtree,
   UserX,
   CheckCircle2,
-  ExternalLink
+  ExternalLink,
+  Plus
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { dbService } from '../../services/db';
@@ -62,14 +63,24 @@ export const CalendarView: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
   
-  const [workingHours, setWorkingHours] = useState<WorkingHoursConfig | null>(null);
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [holidays, setHolidays] = useState<Holiday[]>([]);
-  const [clients, setClients] = useState<UserProfile[]>([]);
-  
-  // Terapeutvalg state
-  const [therapists, setTherapists] = useState<UserProfile[]>([]);
-  const [selectedTherapistId, setSelectedTherapistId] = useState<string>('');
+  const cachedUsers = dbService.getCachedUsers();
+  const availableCachedTherapists = cachedUsers.filter(u => 
+    (u.role === 'admin' || u.role === 'hovedadmin') &&
+    (currentUser?.role !== 'client' || u.isActive !== false || !!u.leaveEndDate)
+  );
+
+  const initialTherapistId = (currentUser?.role === 'admin' || currentUser?.role === 'hovedadmin')
+    ? (availableCachedTherapists.some(t => t.uid === currentUser.uid) ? currentUser.uid : (availableCachedTherapists[0]?.uid || ''))
+    : (availableCachedTherapists[0]?.uid || '');
+
+  const [workingHours, setWorkingHours] = useState<WorkingHoursConfig>(() => 
+    dbService.getCachedWorkingHours(initialTherapistId)
+  );
+  const [appointments, setAppointments] = useState<Appointment[]>(() => dbService.getCachedAppointments());
+  const [holidays, setHolidays] = useState<Holiday[]>(() => dbService.getCachedHolidays());
+  const [clients, setClients] = useState<UserProfile[]>(() => cachedUsers.filter(u => u.role === 'client'));
+  const [therapists, setTherapists] = useState<UserProfile[]>(availableCachedTherapists);
+  const [selectedTherapistId, setSelectedTherapistId] = useState<string>(initialTherapistId);
   const [isDaySlotsModalOpen, setIsDaySlotsModalOpen] = useState(false);
 
   // Booking modal state
@@ -89,34 +100,56 @@ export const CalendarView: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [currentUser?.uid]);
+
+    const handleDataUpdate = (e: any) => {
+      const type = e?.detail?.type;
+      if (type === 'appointments' || !type) {
+        setAppointments(dbService.getCachedAppointments());
+      }
+      if (type === 'working_hours' || !type) {
+        setWorkingHours(dbService.getCachedWorkingHours(selectedTherapistId));
+      }
+      if (type === 'users' || !type) {
+        const uList = dbService.getCachedUsers();
+        setClients(uList.filter(u => u.role === 'client'));
+        setTherapists(uList.filter(u => 
+          (u.role === 'admin' || u.role === 'hovedadmin') &&
+          (currentUser?.role !== 'client' || u.isActive !== false || !!u.leaveEndDate)
+        ));
+      }
+    };
+
+    window.addEventListener('dintid_data_updated', handleDataUpdate);
+    return () => window.removeEventListener('dintid_data_updated', handleDataUpdate);
+  }, [currentUser?.uid, selectedTherapistId]);
 
   const loadData = async () => {
-    const apts = await dbService.getAppointments();
-    const users = await dbService.getUsers();
-    const hList = await dbService.getHolidays();
+    const targetTherapistId = selectedTherapistId || initialTherapistId;
+    const [apts, users, hList, wh] = await Promise.all([
+      dbService.getAppointments(),
+      dbService.getUsers(),
+      dbService.getHolidays(),
+      dbService.getWorkingHours(targetTherapistId)
+    ]);
     
     setAppointments(apts);
     setClients(users.filter(u => u.role === 'client'));
     setHolidays(hList);
+    setWorkingHours(wh);
 
     // Hent alle tilgjengelige behandlere/terapeuter
-    // Hvis klient er innlogget, skjul kun behandlere som er permanent inaktive uten sluttdato
     const availableTherapists = users.filter(u => 
       (u.role === 'admin' || u.role === 'hovedadmin') &&
       (currentUser?.role !== 'client' || u.isActive !== false || !!u.leaveEndDate)
     );
     setTherapists(availableTherapists);
 
-    // Forhåndsvalg av terapeut:
     let preselectedId = '';
     if (currentUser?.role === 'admin' || currentUser?.role === 'hovedadmin') {
-      // Når terapeuten er innlogget skal sin egen kalender være forvalgt
       if (availableTherapists.some(t => t.uid === currentUser.uid)) {
         preselectedId = currentUser.uid;
       }
     } else if (currentUser?.role === 'client') {
-      // Forhåndsvalg av forrige terapeut hvis klient har hatt time før
       const clientApts = apts
         .filter(a => a.clientId === currentUser.uid && a.status !== 'cancelled')
         .sort((a, b) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime));
@@ -136,20 +169,13 @@ export const CalendarView: React.FC = () => {
       preselectedId = availableTherapists[0]?.uid || '';
     }
 
-    setSelectedTherapistId(preselectedId);
-
-    // Hent arbeidstider og priser spesifikt for valgt terapeut
-    if (preselectedId) {
-      const wh = await dbService.getWorkingHours(preselectedId);
-      setWorkingHours(wh);
-    } else {
-      const wh = await dbService.getWorkingHours();
-      setWorkingHours(wh);
+    if (!selectedTherapistId) {
+      setSelectedTherapistId(preselectedId);
     }
 
     if (currentUser?.role === 'client') {
       setSelectedClientId(currentUser.uid);
-    } else if (users.length > 0) {
+    } else if (users.length > 0 && !selectedClientId) {
       const firstClient = users.find(u => u.role === 'client');
       if (firstClient) setSelectedClientId(firstClient.uid);
     }
@@ -160,8 +186,11 @@ export const CalendarView: React.FC = () => {
     if (currentUser?.role === 'client') {
       localStorage.setItem(`dintid_client_therapist_${currentUser.uid}`, therapistId);
     }
-    const wh = await dbService.getWorkingHours(therapistId);
-    setWorkingHours(wh);
+    const cachedWh = dbService.getCachedWorkingHours(therapistId);
+    setWorkingHours(cachedWh);
+
+    const freshWh = await dbService.getWorkingHours(therapistId);
+    setWorkingHours(freshWh);
   };
 
   const selectedTherapist = therapists.find(t => t.uid === selectedTherapistId) || therapists[0];
@@ -735,9 +764,16 @@ export const CalendarView: React.FC = () => {
               : [];
             const hasMyAppointment = myAppointmentsToday.length > 0;
 
+            const therapistAppointmentsToday = !isClient
+              ? therapistAppointments.filter(a => a.date === dateStr && a.status !== 'cancelled')
+              : [];
+            const hasTherapistAppointments = therapistAppointmentsToday.length > 0;
+
             let statusColor = 'bg-slate-50 text-slate-400 border-transparent';
             if (hasMyAppointment) {
               statusColor = 'bg-sky-50/80 text-sky-950 border-sky-400 ring-2 ring-sky-500/60 shadow-xs hover:border-sky-500';
+            } else if (hasTherapistAppointments) {
+              statusColor = 'bg-sky-50/80 text-sky-950 border-sky-300 ring-1 ring-sky-400/50 shadow-2xs hover:border-sky-500';
             } else if (dateHoliday) {
               statusColor = 'bg-amber-50/50 text-amber-900 border-amber-200/80 hover:border-amber-300';
             } else if (availability.status === 'fully_booked') {
@@ -768,6 +804,8 @@ export const CalendarView: React.FC = () => {
                   {/* Fargekodeprikk, Ferie-ikon eller Kundens time-indikator */}
                   {hasMyAppointment ? (
                     <span className="w-2.5 h-2.5 rounded-full bg-sky-600 ring-2 ring-sky-300 shadow-xs flex-shrink-0" title={`Du har ${myAppointmentsToday.length} avtalt time denne dagen`}></span>
+                  ) : hasTherapistAppointments ? (
+                    <span className="w-2.5 h-2.5 rounded-full bg-sky-600 ring-2 ring-sky-300 shadow-xs flex-shrink-0" title={`Du har ${therapistAppointmentsToday.length} avtalte timer denne dagen`}></span>
                   ) : dateHoliday ? (
                     <Palmtree className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 text-amber-600" />
                   ) : isTherapistInactive ? (
@@ -790,6 +828,20 @@ export const CalendarView: React.FC = () => {
                         {myAppointmentsToday.length === 1 ? myAppointmentsToday[0].startTime : `${myAppointmentsToday.length} timer`}
                       </span>
                     </span>
+                  ) : hasTherapistAppointments ? (
+                    <div className="w-full flex flex-col gap-0.5">
+                      <span className="inline-flex items-center gap-0.5 px-1 sm:px-1.5 py-0.2 rounded text-[9px] sm:text-[10px] font-extrabold bg-sky-600 text-white shadow-2xs">
+                        <CheckCircle2 className="w-2.5 h-2.5 text-sky-200 flex-shrink-0" />
+                        <span className="truncate max-w-[45px] sm:max-w-[65px]">
+                          {therapistAppointmentsToday.length === 1 ? `kl. ${therapistAppointmentsToday[0].startTime}` : `${therapistAppointmentsToday.length} timer`}
+                        </span>
+                      </span>
+                      {therapistAppointmentsToday.length === 1 && (
+                        <span className="hidden sm:block text-[9px] font-semibold text-slate-700 truncate pl-0.5">
+                          {therapistAppointmentsToday[0].clientName}
+                        </span>
+                      )}
+                    </div>
                   ) : dateHoliday ? (
                     <span className="inline-flex items-center gap-0.5 px-1 sm:px-1.5 py-0.2 rounded text-[9px] sm:text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200" title={`Ferie/fravær: ${dateHoliday.title}`}>
                       <Palmtree className="w-2.5 h-2.5 text-amber-600 flex-shrink-0" />
@@ -870,6 +922,62 @@ export const CalendarView: React.FC = () => {
 
             {/* Liste over tider */}
             <div className="mt-3.5 flex-1 overflow-y-auto space-y-2 pr-0.5 min-h-[160px]">
+              {!isClient && (
+                <div className="mb-3 space-y-2 pb-3 border-b border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <CalendarIcon className="w-3.5 h-3.5 text-sky-600" />
+                      <span>Avtalte timer ({therapistAppointments.filter(a => a.date === selectedDateStr && a.status !== 'cancelled').length})</span>
+                    </h4>
+                    <button
+                      onClick={() => {
+                        setIsDaySlotsModalOpen(false);
+                        setSelectedSlot({
+                          id: `custom_${selectedDateStr}_10:00`,
+                          startTime: '10:00',
+                          endTime: '10:45',
+                          date: selectedDateStr,
+                          isAvailable: true
+                        });
+                        setOriginalSlotBeforeSuggestion(null);
+                        setBookingSlotType(slotTypeOptions[0]);
+                        if (clients.length > 0 && !selectedClientId) {
+                          setSelectedClientId(clients[0].uid);
+                        }
+                        setIsBookingModalOpen(true);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Avtal ny time</span>
+                    </button>
+                  </div>
+
+                  {therapistAppointments.filter(a => a.date === selectedDateStr && a.status !== 'cancelled').length > 0 ? (
+                    <div className="space-y-1.5">
+                      {therapistAppointments.filter(a => a.date === selectedDateStr && a.status !== 'cancelled').map(apt => (
+                        <div key={apt.id} className="p-3 rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-between text-xs">
+                          <div>
+                            <p className="font-extrabold text-slate-900 font-mono">
+                              kl. {apt.startTime} - {apt.endTime} &bull; <span className="font-sans font-bold text-sky-800">{apt.clientName}</span>
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              {apt.isOnline ? 'Online videomøte' : 'Fysisk oppmøte'} {apt.notes ? `• Notat: ${apt.notes}` : ''}
+                            </p>
+                          </div>
+                          <span className="font-semibold text-slate-600 font-mono text-[11px]">
+                            kr {apt.price},-
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 italic bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                      Ingen avtalte timer denne dagen ennå.
+                    </p>
+                  )}
+                </div>
+              )}
               {isClient && appointments.filter(a => a.clientId === currentUser?.uid && a.date === selectedDateStr && a.status === 'confirmed' && a.therapistId !== selectedTherapistId).length > 0 && (
                 <div className="p-3 rounded-xl bg-sky-50 border border-sky-300 text-xs text-sky-950 space-y-1.5">
                   <div className="flex items-center gap-1.5 font-bold">

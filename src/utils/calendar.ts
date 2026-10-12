@@ -331,3 +331,72 @@ export function findContinuousAlternativeSlots(
   };
 }
 
+/**
+ * Finner første tilgjengelige åpne dato for en behandler/klinikk (fra og med startDato, opptil maxDays frem i tid)
+ */
+export function getFirstOpenDate(
+  fromDate: Date = new Date(),
+  config: WorkingHoursConfig,
+  appointments: Appointment[] = [],
+  holidays: Holiday[] = [],
+  therapist?: UserProfile,
+  maxDays = 30
+): Date {
+  if (!config) return fromDate;
+
+  for (let i = 0; i <= maxDays; i++) {
+    const candidate = new Date(fromDate);
+    candidate.setDate(fromDate.getDate() + i);
+    const dStr = candidate.toISOString().slice(0, 10);
+
+    // Sjekk permisjon
+    if (therapist && isTherapistOnLeave(therapist, dStr)) {
+      continue;
+    }
+
+    const avail = getDayAvailability(dStr, config, appointments, holidays);
+    if (avail.status !== 'closed') {
+      return candidate;
+    }
+  }
+
+  return fromDate;
+}
+
+/**
+ * Returnerer en pen tekstlig oppsummering av behandlerens åpningsdager og tidspunkter på norsk
+ */
+export function getWorkDaysSummary(config?: WorkingHoursConfig | null): string {
+  if (!config || !config.workDays || config.workDays.length === 0) {
+    return 'Ikke spesifisert';
+  }
+
+  const dayNames: Record<number, string> = {
+    1: 'Mandag',
+    2: 'Tirsdag',
+    3: 'Onsdag',
+    4: 'Torsdag',
+    5: 'Fredag',
+    6: 'Lørdag',
+    0: 'Søndag'
+  };
+
+  const sortedDays = [...config.workDays].sort((a, b) => {
+    const normA = a === 0 ? 7 : a;
+    const normB = b === 0 ? 7 : b;
+    return normA - normB;
+  });
+
+  let daysText = '';
+  if (sortedDays.length === 5 && sortedDays.every((d, idx) => d === idx + 1)) {
+    daysText = 'Mandag – Fredag';
+  } else if (sortedDays.length === 2 && sortedDays[0] === 2 && sortedDays[1] === 4) {
+    daysText = 'Tirsdager og Torsdager';
+  } else {
+    daysText = sortedDays.map(d => dayNames[d] || String(d)).join(', ');
+  }
+
+  const timeText = config.startTime && config.endTime ? ` (kl. ${config.startTime} – ${config.endTime})` : '';
+  return `${daysText}${timeText}`;
+}
+

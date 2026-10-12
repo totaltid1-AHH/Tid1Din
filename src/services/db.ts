@@ -106,6 +106,8 @@ const SEED_USERS: UserProfile[] = [
   {
     uid: 'u_hovedadmin',
     email: 'hovedadmin@dintid.no',
+    username: 'hovedadmin',
+    password: 'demo1234',
     role: 'hovedadmin',
     displayName: 'Dr. Kari Nordmann',
     phone: '90011000',
@@ -116,10 +118,12 @@ const SEED_USERS: UserProfile[] = [
   {
     uid: 'u_admin_full',
     email: 'admin.jonas@dintid.no',
+    username: 'jonas',
+    password: 'demo1234',
     role: 'admin',
     displayName: 'Jonas Berg',
     phone: '98822000',
-    twoFactorEnabled: true,
+    twoFactorEnabled: false,
     isActive: true,
     permissions: {
       canViewClientName: true,
@@ -133,10 +137,12 @@ const SEED_USERS: UserProfile[] = [
   {
     uid: 'u_admin_restricted',
     email: 'admin.eva@dintid.no',
+    username: 'eva',
+    password: 'demo1234',
     role: 'admin',
     displayName: 'Eva Lund',
     phone: '45533000',
-    twoFactorEnabled: true,
+    twoFactorEnabled: false,
     isActive: true,
     permissions: {
       canViewClientName: false, // Navn skjules for denne
@@ -150,6 +156,8 @@ const SEED_USERS: UserProfile[] = [
   {
     uid: 'u_client_1000',
     email: 'ola.hansen@eksempel.no',
+    username: 'ola',
+    password: 'demo1234',
     role: 'client',
     displayName: 'Ola Hansen',
     customerNumber: 1000,
@@ -163,6 +171,8 @@ const SEED_USERS: UserProfile[] = [
   {
     uid: 'u_client_1001',
     email: 'silje.tangen@eksempel.no',
+    username: 'silje',
+    password: 'demo1234',
     role: 'client',
     displayName: 'Silje Tangen',
     customerNumber: 1001,
@@ -175,7 +185,109 @@ const SEED_USERS: UserProfile[] = [
   }
 ];
 
+
 class DatabaseService {
+  private memoryAppointments: Appointment[] | null = null;
+  private memoryAppointmentsTime = 0;
+  private memoryUsers: UserProfile[] | null = null;
+  private memoryUsersTime = 0;
+  private memoryWorkingHours: Map<string, { config: WorkingHoursConfig; timestamp: number }> = new Map();
+  private memoryHolidays: Holiday[] | null = null;
+  private memoryHolidaysTime = 0;
+
+  private notifyDataUpdated(type: 'appointments' | 'users' | 'working_hours' | 'holidays') {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('dintid_data_updated', { detail: { type } }));
+    }
+  }
+
+  private sanitizeUsers(list: UserProfile[]): UserProfile[] {
+    return list.map(u => {
+      const base = {
+        ...u,
+        isActive: u.isActive !== false
+      };
+      if (u.role === 'admin' || u.role === 'hovedadmin') {
+        return {
+          ...base,
+          displayName: u.displayName.replace(/\s*\([^)]*\)/g, '').trim()
+        };
+      }
+      return base;
+    });
+  }
+
+  public getCachedUsers(): UserProfile[] {
+    if (this.memoryUsers) {
+      return this.memoryUsers;
+    }
+    const local = this.getLocal<UserProfile[]>('users', SEED_USERS);
+    const cleaned = this.sanitizeUsers(local);
+    this.memoryUsers = cleaned;
+    return cleaned;
+  }
+
+  public getCachedAppointments(): Appointment[] {
+    if (this.memoryAppointments) {
+      return this.memoryAppointments;
+    }
+    const local = this.getLocal<Appointment[]>('appointments', []);
+    this.memoryAppointments = local;
+    return local;
+  }
+
+  public getCachedWorkingHours(therapistId?: string): WorkingHoursConfig {
+    const docId = therapistId ? `wh_${therapistId}` : 'default';
+    const storageKey = therapistId ? `working_hours_${therapistId}` : 'working_hours';
+
+    const mem = this.memoryWorkingHours.get(docId);
+    if (mem) {
+      return mem.config;
+    }
+
+    const local = this.getLocal<WorkingHoursConfig | null>(storageKey, null);
+    if (local) {
+      const merged: WorkingHoursConfig = {
+        ...DEFAULT_WORKING_HOURS,
+        ...local,
+        // Behold terapeuten sine faktiske arbeidsdager selv om listen er tom (f.eks. ved ferie/stengt)
+        workDays: Array.isArray(local.workDays) ? local.workDays : DEFAULT_WORKING_HOURS.workDays,
+        breaks: Array.isArray(local.breaks) ? local.breaks : DEFAULT_WORKING_HOURS.breaks,
+        prices: { ...DEFAULT_WORKING_HOURS.prices, ...(local.prices || {}) },
+        dailySchedules: local.dailySchedules ? { ...local.dailySchedules } : {},
+        isScheduleApproved: !!local.isScheduleApproved,
+        id: docId,
+        therapistId: therapistId || local.therapistId
+      };
+      this.memoryWorkingHours.set(docId, { config: merged, timestamp: Date.now() });
+      return merged;
+    }
+
+    const baseDefault = this.getLocal<WorkingHoursConfig>('working_hours', DEFAULT_WORKING_HOURS);
+    const fallback: WorkingHoursConfig = {
+      ...DEFAULT_WORKING_HOURS,
+      ...baseDefault,
+      workDays: Array.isArray(baseDefault.workDays) ? baseDefault.workDays : DEFAULT_WORKING_HOURS.workDays,
+      breaks: Array.isArray(baseDefault.breaks) ? baseDefault.breaks : DEFAULT_WORKING_HOURS.breaks,
+      prices: { ...DEFAULT_WORKING_HOURS.prices, ...(baseDefault.prices || {}) },
+      dailySchedules: baseDefault.dailySchedules ? { ...baseDefault.dailySchedules } : {},
+      isScheduleApproved: !!baseDefault.isScheduleApproved,
+      id: docId,
+      therapistId: therapistId || baseDefault.therapistId
+    };
+    this.memoryWorkingHours.set(docId, { config: fallback, timestamp: Date.now() });
+    return fallback;
+  }
+
+  public getCachedHolidays(): Holiday[] {
+    if (this.memoryHolidays) {
+      return this.memoryHolidays;
+    }
+    const local = this.getLocal<Holiday[]>('holidays', []);
+    this.memoryHolidays = local;
+    return local;
+  }
+
   private getLocal<T>(key: string, defaultValue: T): T {
     try {
       const data = localStorage.getItem(STORAGE_PREFIX + key);
@@ -272,44 +384,53 @@ class DatabaseService {
   }
 
   // --- BRUKERE & KLIENTER ---
-  public async getUsers(): Promise<UserProfile[]> {
-    const sanitizeUsers = (list: UserProfile[]) => {
-      return list.map(u => {
-        const base = {
-          ...u,
-          isActive: u.isActive !== false
-        };
-        if (u.role === 'admin' || u.role === 'hovedadmin') {
-          return {
-            ...base,
-            displayName: u.displayName.replace(/\s*\([^)]*\)/g, '').trim()
-          };
-        }
-        return base;
-      });
-    };
-
-    if (isFirebaseConfigured && db) {
-      try {
-        const snap = await getDocs(collection(db, 'users'));
-        if (!snap.empty) {
-          const users = snap.docs.map(d => d.data() as UserProfile);
-          const cleaned = sanitizeUsers(users);
-          this.setLocal('users', cleaned);
-          return cleaned;
-        } else {
-          for (const u of SEED_USERS) {
-            await setDoc(doc(db, 'users', u.uid), u);
-          }
-          this.setLocal('users', SEED_USERS);
-          return SEED_USERS;
-        }
-      } catch (e) {
-        console.warn('Firebase feilet, faller tilbake til lokal lagring', e);
-      }
+  public async getUsers(forceRefresh = false): Promise<UserProfile[]> {
+    const now = Date.now();
+    if (!forceRefresh && this.memoryUsers && (now - this.memoryUsersTime < 10000)) {
+      return this.memoryUsers;
     }
-    const local = this.getLocal<UserProfile[]>('users', SEED_USERS);
-    return sanitizeUsers(local);
+
+    const cached = this.getCachedUsers();
+
+    const fetchPromise = (async () => {
+      if (isFirebaseConfigured && db) {
+        try {
+          const snap = await getDocs(collection(db, 'users'));
+          if (!snap.empty) {
+            const users = snap.docs.map(d => d.data() as UserProfile);
+            const cleaned = this.sanitizeUsers(users);
+            const hasChanged = JSON.stringify(cleaned) !== JSON.stringify(this.memoryUsers);
+            this.memoryUsers = cleaned;
+            this.memoryUsersTime = Date.now();
+            this.setLocal('users', cleaned);
+            if (hasChanged) {
+              this.notifyDataUpdated('users');
+            }
+            return cleaned;
+          } else {
+            for (const u of SEED_USERS) {
+              await setDoc(doc(db, 'users', u.uid), u);
+            }
+            this.memoryUsers = SEED_USERS;
+            this.memoryUsersTime = Date.now();
+            this.setLocal('users', SEED_USERS);
+            return SEED_USERS;
+          }
+        } catch (e) {
+          console.warn('Firebase feilet, faller tilbake til lokal lagring', e);
+        }
+      }
+      this.memoryUsers = cached;
+      this.memoryUsersTime = Date.now();
+      return cached;
+    })();
+
+    if (cached.length > 0 && !forceRefresh) {
+      fetchPromise.catch(console.error);
+      return cached;
+    }
+
+    return await fetchPromise;
   }
 
   public async getUserById(uid: string): Promise<UserProfile | null> {
@@ -319,14 +440,17 @@ class DatabaseService {
 
   public async saveUser(user: UserProfile): Promise<void> {
     const cleanUser = cleanForFirestore(user);
-    const users = await this.getUsers();
+    const users = [...this.getCachedUsers()];
     const index = users.findIndex(u => u.uid === user.uid);
     if (index >= 0) {
       users[index] = user;
     } else {
       users.push(user);
     }
+    this.memoryUsers = users;
+    this.memoryUsersTime = Date.now();
     this.setLocal('users', users);
+    this.notifyDataUpdated('users');
 
     if (isFirebaseConfigured && db) {
       try {
@@ -338,9 +462,11 @@ class DatabaseService {
   }
 
   public async deleteUser(uid: string): Promise<void> {
-    let users = await this.getUsers();
-    users = users.filter(u => u.uid !== uid);
+    const users = this.getCachedUsers().filter(u => u.uid !== uid);
+    this.memoryUsers = users;
+    this.memoryUsersTime = Date.now();
     this.setLocal('users', users);
+    this.notifyDataUpdated('users');
 
     if (isFirebaseConfigured && db) {
       try {
@@ -364,66 +490,100 @@ class DatabaseService {
   }
 
   // --- ARBEIDSTID & INNSTILLINGER ---
-  public async getWorkingHours(therapistId?: string): Promise<WorkingHoursConfig> {
+  public async getWorkingHours(therapistId?: string, forceRefresh = false): Promise<WorkingHoursConfig> {
     const docId = therapistId ? `wh_${therapistId}` : 'default';
     const storageKey = therapistId ? `working_hours_${therapistId}` : 'working_hours';
+    const now = Date.now();
 
-    if (isFirebaseConfigured && db) {
-      try {
-        let snap = await getDoc(doc(db, 'workingHours', docId));
-        // Dersom terapeuten ikke har eget oppsett i Firestore, sjekk klinikkens standard
-        if (!snap.exists() && therapistId) {
-          snap = await getDoc(doc(db, 'workingHours', 'default'));
-        }
+    const mem = this.memoryWorkingHours.get(docId);
+    if (!forceRefresh && mem && (now - mem.timestamp < 10000)) {
+      return mem.config;
+    }
 
-        if (snap.exists()) {
-          const config = snap.data() as WorkingHoursConfig;
-          const merged: WorkingHoursConfig = {
-            ...DEFAULT_WORKING_HOURS,
-            ...config,
-            workDays: Array.isArray(config.workDays) && config.workDays.length > 0 
-              ? config.workDays 
-              : DEFAULT_WORKING_HOURS.workDays,
-            breaks: Array.isArray(config.breaks) ? config.breaks : DEFAULT_WORKING_HOURS.breaks,
-            prices: { ...DEFAULT_WORKING_HOURS.prices, ...(config.prices || {}) },
-            id: docId,
-            therapistId: therapistId || config.therapistId
-          };
-          this.setLocal(storageKey, merged);
-          return merged;
-        } else if (!therapistId) {
-          await setDoc(doc(db, 'workingHours', 'default'), DEFAULT_WORKING_HOURS);
-          this.setLocal('working_hours', DEFAULT_WORKING_HOURS);
-          return DEFAULT_WORKING_HOURS;
+    const cached = this.getCachedWorkingHours(therapistId);
+
+    const fetchPromise = (async () => {
+      if (isFirebaseConfigured && db) {
+        try {
+          const snap = await getDoc(doc(db, 'workingHours', docId));
+
+          if (snap.exists()) {
+            const config = snap.data() as WorkingHoursConfig;
+            const merged: WorkingHoursConfig = {
+              ...DEFAULT_WORKING_HOURS,
+              ...config,
+              workDays: Array.isArray(config.workDays) ? config.workDays : DEFAULT_WORKING_HOURS.workDays,
+              breaks: Array.isArray(config.breaks) ? config.breaks : DEFAULT_WORKING_HOURS.breaks,
+              prices: { ...DEFAULT_WORKING_HOURS.prices, ...(config.prices || {}) },
+              dailySchedules: config.dailySchedules ? { ...config.dailySchedules } : {},
+              isScheduleApproved: !!config.isScheduleApproved,
+              id: docId,
+              therapistId: therapistId || config.therapistId
+            };
+            const previous = this.memoryWorkingHours.get(docId)?.config;
+            const hasChanged = JSON.stringify(merged) !== JSON.stringify(previous);
+            this.memoryWorkingHours.set(docId, { config: merged, timestamp: Date.now() });
+            this.setLocal(storageKey, merged);
+            if (hasChanged) {
+              this.notifyDataUpdated('working_hours');
+            }
+            return merged;
+          } else {
+            // Hvis dokumentet ikke finnes i Firestore ennå:
+            // Sjekk om vi allerede har et lokalt lagret oppsett for denne terapeuten
+            const localSaved = this.getLocal<WorkingHoursConfig | null>(storageKey, null);
+            if (localSaved) {
+              // Last opp terapeuten sitt eksisterende lokale oppsett til Firestore i stedet for å overskrive med defaults
+              const cleanConfig = cleanForFirestore({
+                ...localSaved,
+                id: docId,
+                therapistId: therapistId || localSaved.therapistId
+              });
+              await setDoc(doc(db, 'workingHours', docId), cleanConfig).catch(e =>
+                console.warn(`Kunne ikke initiere ${docId} i Firestore:`, e)
+              );
+              this.memoryWorkingHours.set(docId, { config: cleanConfig, timestamp: Date.now() });
+              return cleanConfig;
+            }
+
+            // Hvis det heller ikke finnes noe lokalt for terapeuten, sjekk om det finnes klinikk-default i Firestore
+            if (therapistId) {
+              const defaultSnap = await getDoc(doc(db, 'workingHours', 'default')).catch(() => null);
+              if (defaultSnap && defaultSnap.exists()) {
+                const defData = defaultSnap.data() as WorkingHoursConfig;
+                const cloned: WorkingHoursConfig = {
+                  ...DEFAULT_WORKING_HOURS,
+                  ...defData,
+                  id: docId,
+                  therapistId
+                };
+                this.memoryWorkingHours.set(docId, { config: cloned, timestamp: Date.now() });
+                this.setLocal(storageKey, cloned);
+                await setDoc(doc(db, 'workingHours', docId), cleanForFirestore(cloned)).catch(() => null);
+                return cloned;
+              }
+            } else {
+              // For selve 'default' klinikkoppsettet
+              await setDoc(doc(db, 'workingHours', 'default'), cleanForFirestore(cached)).catch(() => null);
+              this.memoryWorkingHours.set(docId, { config: cached, timestamp: Date.now() });
+              this.setLocal('working_hours', cached);
+              return cached;
+            }
+          }
+        } catch (e) {
+          console.warn('Firebase error fetching working hours, using cached fallback:', e);
         }
-      } catch (e) {
-        console.warn('Firebase error fetching working hours:', e);
       }
+      this.memoryWorkingHours.set(docId, { config: cached, timestamp: Date.now() });
+      return cached;
+    })();
+
+    if (cached && !forceRefresh) {
+      fetchPromise.catch(console.error);
+      return cached;
     }
 
-    const local = this.getLocal<WorkingHoursConfig | null>(storageKey, null);
-    if (local) {
-      return {
-        ...DEFAULT_WORKING_HOURS,
-        ...local,
-        workDays: Array.isArray(local.workDays) && local.workDays.length > 0 ? local.workDays : DEFAULT_WORKING_HOURS.workDays,
-        breaks: Array.isArray(local.breaks) ? local.breaks : DEFAULT_WORKING_HOURS.breaks,
-        prices: { ...DEFAULT_WORKING_HOURS.prices, ...(local.prices || {}) },
-        id: docId,
-        therapistId: therapistId || local.therapistId
-      };
-    }
-
-    const baseDefault = this.getLocal<WorkingHoursConfig>('working_hours', DEFAULT_WORKING_HOURS);
-    return {
-      ...DEFAULT_WORKING_HOURS,
-      ...baseDefault,
-      workDays: Array.isArray(baseDefault.workDays) && baseDefault.workDays.length > 0 ? baseDefault.workDays : DEFAULT_WORKING_HOURS.workDays,
-      breaks: Array.isArray(baseDefault.breaks) ? baseDefault.breaks : DEFAULT_WORKING_HOURS.breaks,
-      prices: { ...DEFAULT_WORKING_HOURS.prices, ...(baseDefault.prices || {}) },
-      id: docId,
-      therapistId: therapistId || baseDefault.therapistId
-    };
+    return await fetchPromise;
   }
 
   public async saveWorkingHours(config: WorkingHoursConfig, therapistId?: string): Promise<void> {
@@ -437,39 +597,64 @@ class DatabaseService {
       therapistId: targetTherapistId || undefined
     });
 
+    // 1. Alltid lagre i minne og LocalStorage umiddelbart
+    this.memoryWorkingHours.set(docId, { config: cleanConfig, timestamp: Date.now() });
     this.setLocal(storageKey, cleanConfig);
+    this.notifyDataUpdated('working_hours');
+
+    // 2. Synkroniser til Firestore med robust feilhåndtering
     if (isFirebaseConfigured && db) {
       try {
         await setDoc(doc(db, 'workingHours', docId), cleanConfig);
       } catch (e) {
-        console.error('Kunne ikke lagre arbeidstid til Firestore:', e);
+        console.error(`Kunne ikke lagre arbeidstid (${docId}) til Firestore:`, e);
       }
     }
   }
 
   // --- TIMEAVTALER (APPOINTMENTS) ---
-  public async getAppointments(): Promise<Appointment[]> {
-    if (isFirebaseConfigured && db) {
-      try {
-        const snap = await getDocs(collection(db, 'appointments'));
-        if (!snap.empty) {
-          const apts = snap.docs.map(d => ({ ...d.data(), id: d.id } as Appointment));
-          this.setLocal('appointments', apts);
-          return apts;
-        } else {
-          const localApts = this.getLocal<Appointment[]>('appointments', []);
-          if (localApts.length > 0) {
-            for (const apt of localApts) {
+  public async getAppointments(forceRefresh = false): Promise<Appointment[]> {
+    const now = Date.now();
+    if (!forceRefresh && this.memoryAppointments && (now - this.memoryAppointmentsTime < 10000)) {
+      return this.memoryAppointments;
+    }
+
+    const cached = this.getCachedAppointments();
+
+    const fetchPromise = (async () => {
+      if (isFirebaseConfigured && db) {
+        try {
+          const snap = await getDocs(collection(db, 'appointments'));
+          if (!snap.empty) {
+            const apts = snap.docs.map(d => ({ ...d.data(), id: d.id } as Appointment));
+            const hasChanged = JSON.stringify(apts) !== JSON.stringify(this.memoryAppointments);
+            this.memoryAppointments = apts;
+            this.memoryAppointmentsTime = Date.now();
+            this.setLocal('appointments', apts);
+            if (hasChanged) {
+              this.notifyDataUpdated('appointments');
+            }
+            return apts;
+          } else if (cached.length > 0) {
+            for (const apt of cached) {
               await setDoc(doc(db, 'appointments', apt.id), apt);
             }
-            return localApts;
           }
+        } catch (e) {
+          console.warn('Firebase error fetching appointments:', e);
         }
-      } catch (e) {
-        console.warn('Firebase error fetching appointments:', e);
       }
+      this.memoryAppointments = cached;
+      this.memoryAppointmentsTime = Date.now();
+      return cached;
+    })();
+
+    if (cached.length > 0 && !forceRefresh) {
+      fetchPromise.catch(console.error);
+      return cached;
     }
-    return this.getLocal<Appointment[]>('appointments', []);
+
+    return await fetchPromise;
   }
 
   public async getAppointmentsByClient(clientId: string): Promise<Appointment[]> {
@@ -479,14 +664,17 @@ class DatabaseService {
 
   public async saveAppointment(apt: Appointment): Promise<void> {
     const cleanApt = cleanForFirestore(apt);
-    const appointments = await this.getAppointments();
+    const appointments = [...this.getCachedAppointments()];
     const idx = appointments.findIndex(a => a.id === apt.id);
     if (idx >= 0) {
       appointments[idx] = { ...apt, updatedAt: new Date().toISOString() };
     } else {
       appointments.push(apt);
     }
+    this.memoryAppointments = appointments;
+    this.memoryAppointmentsTime = Date.now();
     this.setLocal('appointments', appointments);
+    this.notifyDataUpdated('appointments');
 
     if (isFirebaseConfigured && db) {
       try {
@@ -499,13 +687,24 @@ class DatabaseService {
   }
 
   public async cancelAppointment(id: string, reason?: string): Promise<void> {
-    const appointments = await this.getAppointments();
+    const appointments = [...this.getCachedAppointments()];
     const apt = appointments.find(a => a.id === id);
     if (apt) {
       apt.status = 'cancelled';
       apt.cancellationReason = reason || 'Avbestilt av bruker/admin';
       apt.updatedAt = new Date().toISOString();
-      await this.saveAppointment(apt);
+      this.memoryAppointments = appointments;
+      this.memoryAppointmentsTime = Date.now();
+      this.setLocal('appointments', appointments);
+      this.notifyDataUpdated('appointments');
+
+      if (isFirebaseConfigured && db) {
+        try {
+          await setDoc(doc(db, 'appointments', apt.id), cleanForFirestore(apt));
+        } catch (e) {
+          console.error('Kunne ikke oppdatere avbestilling i Firestore:', e);
+        }
+      }
     }
   }
 
@@ -693,32 +892,59 @@ class DatabaseService {
   }
 
   // --- FERIER & FRAVÆR ---
-  public async getHolidays(): Promise<Holiday[]> {
-    if (isFirebaseConfigured && db) {
-      try {
-        const snap = await getDocs(collection(db, 'holidays'));
-        if (!snap.empty) {
-          const holidays = snap.docs.map(d => ({ ...d.data(), id: d.id } as Holiday));
-          this.setLocal('holidays', holidays);
-          return holidays;
-        }
-      } catch (e) {
-        console.warn('Firebase error fetching holidays:', e);
-      }
+  public async getHolidays(forceRefresh = false): Promise<Holiday[]> {
+    const now = Date.now();
+    if (!forceRefresh && this.memoryHolidays && (now - this.memoryHolidaysTime < 10000)) {
+      return this.memoryHolidays;
     }
-    return this.getLocal<Holiday[]>('holidays', []);
+
+    const cached = this.getCachedHolidays();
+
+    const fetchPromise = (async () => {
+      if (isFirebaseConfigured && db) {
+        try {
+          const snap = await getDocs(collection(db, 'holidays'));
+          if (!snap.empty) {
+            const holidays = snap.docs.map(d => ({ ...d.data(), id: d.id } as Holiday));
+            const hasChanged = JSON.stringify(holidays) !== JSON.stringify(this.memoryHolidays);
+            this.memoryHolidays = holidays;
+            this.memoryHolidaysTime = Date.now();
+            this.setLocal('holidays', holidays);
+            if (hasChanged) {
+              this.notifyDataUpdated('holidays');
+            }
+            return holidays;
+          }
+        } catch (e) {
+          console.warn('Firebase error fetching holidays:', e);
+        }
+      }
+      this.memoryHolidays = cached;
+      this.memoryHolidaysTime = Date.now();
+      return cached;
+    })();
+
+    if (cached.length > 0 && !forceRefresh) {
+      fetchPromise.catch(console.error);
+      return cached;
+    }
+
+    return await fetchPromise;
   }
 
   public async saveHoliday(holiday: Holiday): Promise<void> {
     const cleanHoliday = cleanForFirestore(holiday);
-    const holidays = await this.getHolidays();
+    const holidays = [...this.getCachedHolidays()];
     const idx = holidays.findIndex(h => h.id === holiday.id);
     if (idx >= 0) {
       holidays[idx] = holiday;
     } else {
       holidays.push(holiday);
     }
+    this.memoryHolidays = holidays;
+    this.memoryHolidaysTime = Date.now();
     this.setLocal('holidays', holidays);
+    this.notifyDataUpdated('holidays');
 
     if (isFirebaseConfigured && db) {
       try {
@@ -730,9 +956,11 @@ class DatabaseService {
   }
 
   public async deleteHoliday(holidayId: string): Promise<void> {
-    const holidays = await this.getHolidays();
-    const filtered = holidays.filter(h => h.id !== holidayId);
-    this.setLocal('holidays', filtered);
+    const holidays = this.getCachedHolidays().filter(h => h.id !== holidayId);
+    this.memoryHolidays = holidays;
+    this.memoryHolidaysTime = Date.now();
+    this.setLocal('holidays', holidays);
+    this.notifyDataUpdated('holidays');
 
     if (isFirebaseConfigured && db) {
       try {

@@ -52,7 +52,9 @@ import {
   checkLunchCollision,
   findContinuousAlternativeSlots,
   isDateInHoliday,
-  isTherapistOnLeave
+  isTherapistOnLeave,
+  getFirstOpenDate,
+  getWorkDaysSummary
 } from '../../utils/calendar';
 
 interface BookingViewProps {
@@ -67,21 +69,65 @@ export const BookingView: React.FC<BookingViewProps> = ({
   initialDate 
 }) => {
   const { currentUser } = useAuth();
-  const [currentDate, setCurrentDate] = useState<Date>(
-    initialDate ? new Date(initialDate) : new Date()
-  );
-  const [selectedDate, setSelectedDate] = useState<Date>(
-    initialDate ? new Date(initialDate) : new Date()
-  );
 
-  const [workingHours, setWorkingHours] = useState<WorkingHoursConfig | null>(null);
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [holidays, setHolidays] = useState<Holiday[]>([]);
-  const [clients, setClients] = useState<UserProfile[]>([]);
-  
-  // Terapeutvalg
-  const [therapists, setTherapists] = useState<UserProfile[]>([]);
-  const [selectedTherapistId, setSelectedTherapistId] = useState<string>('');
+  // Synkron forhåndslesing fra minne-cache for 0ms umiddelbar rendering
+  const getInitialTherapistId = (): string => {
+    const cachedUsers = dbService.getCachedUsers();
+    const available = cachedUsers.filter(u => 
+      (u.role === 'admin' || u.role === 'hovedadmin') &&
+      (currentUser?.role !== 'client' || u.isActive !== false || !!u.leaveEndDate)
+    );
+
+    if (currentUser?.role === 'admin' || currentUser?.role === 'hovedadmin') {
+      if (available.some(t => t.uid === currentUser.uid)) {
+        return currentUser.uid;
+      }
+    } else if (currentUser?.role === 'client') {
+      const cachedApts = dbService.getCachedAppointments()
+        .filter(a => a.clientId === currentUser.uid && a.status !== 'cancelled')
+        .sort((a, b) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime));
+
+      const lastAptWithTherapist = cachedApts.find(a => a.therapistId);
+      if (lastAptWithTherapist && lastAptWithTherapist.therapistId && available.some(t => t.uid === lastAptWithTherapist.therapistId)) {
+        return lastAptWithTherapist.therapistId;
+      }
+      const savedPref = localStorage.getItem(`dintid_client_therapist_${currentUser.uid}`);
+      if (savedPref && available.some(t => t.uid === savedPref)) {
+        return savedPref;
+      }
+    }
+
+    const activeNonLeave = available.find(t => !isTherapistOnLeave(t));
+    return activeNonLeave?.uid || available[0]?.uid || '';
+  };
+
+  const initialTherapistId = getInitialTherapistId();
+  const initialCachedWh = dbService.getCachedWorkingHours(initialTherapistId);
+  const initialCachedApts = dbService.getCachedAppointments();
+  const initialCachedHols = dbService.getCachedHolidays();
+  const initialCachedUsers = dbService.getCachedUsers();
+  const initialCachedTherapists = initialCachedUsers.filter(u => 
+    (u.role === 'admin' || u.role === 'hovedadmin') &&
+    (currentUser?.role !== 'client' || u.isActive !== false || !!u.leaveEndDate)
+  );
+  const initialTherapist = initialCachedTherapists.find(t => t.uid === initialTherapistId) || initialCachedTherapists[0];
+
+  const [selectedTherapistId, setSelectedTherapistId] = useState<string>(initialTherapistId);
+  const [workingHours, setWorkingHours] = useState<WorkingHoursConfig>(initialCachedWh);
+  const [appointments, setAppointments] = useState<Appointment[]>(initialCachedApts);
+  const [holidays, setHolidays] = useState<Holiday[]>(initialCachedHols);
+  const [therapists, setTherapists] = useState<UserProfile[]>(initialCachedTherapists);
+  const [clients, setClients] = useState<UserProfile[]>(() => initialCachedUsers.filter(u => u.role === 'client'));
+
+  // Finn første åpne dag umiddelbart på frame 0 hvis ingen dato ble spesifisert
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
+    if (initialDate) return new Date(`${initialDate}T12:00:00`);
+    return getFirstOpenDate(new Date(), initialCachedWh, initialCachedApts, initialCachedHols, initialTherapist);
+  });
+  const [currentDate, setCurrentDate] = useState<Date>(() => {
+    if (initialDate) return new Date(`${initialDate}T12:00:00`);
+    return getFirstOpenDate(new Date(), initialCachedWh, initialCachedApts, initialCachedHols, initialTherapist);
+  });
 
   // Booking modal og tilstand
   const [selectedSlot, setSelectedSlot] = useState<GeneratedSlot | null>(null);
@@ -89,7 +135,11 @@ export const BookingView: React.FC<BookingViewProps> = ({
   const [bookingSlotType, setBookingSlotType] = useState<SlotTypeOption>(DEFAULT_SLOT_TYPES[0]);
   const [isOnlineMeeting, setIsOnlineMeeting] = useState(false);
   const [bookingNotes, setBookingNotes] = useState('');
-  const [selectedClientId, setSelectedClientId] = useState<string>('');
+  const [selectedClientId, setSelectedClientId] = useState<string>(() => {
+    if (currentUser?.role === 'client') return currentUser.uid;
+    const clientList = initialCachedUsers.filter(u => u.role === 'client');
+    return clientList[0]?.uid || '';
+  });
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
 
   // Lunsj-forslag håndtering
@@ -105,7 +155,28 @@ export const BookingView: React.FC<BookingViewProps> = ({
 
   useEffect(() => {
     loadData();
-  }, [currentUser?.uid]);
+
+    const handleDataUpdate = (e: any) => {
+      const type = e?.detail?.type;
+      if (type === 'appointments' || !type) {
+        setAppointments(dbService.getCachedAppointments());
+      }
+      if (type === 'working_hours' || !type) {
+        setWorkingHours(dbService.getCachedWorkingHours(selectedTherapistId));
+      }
+      if (type === 'users' || !type) {
+        const uList = dbService.getCachedUsers();
+        setClients(uList.filter(u => u.role === 'client'));
+        setTherapists(uList.filter(u => 
+          (u.role === 'admin' || u.role === 'hovedadmin') &&
+          (currentUser?.role !== 'client' || u.isActive !== false || !!u.leaveEndDate)
+        ));
+      }
+    };
+
+    window.addEventListener('dintid_data_updated', handleDataUpdate);
+    return () => window.removeEventListener('dintid_data_updated', handleDataUpdate);
+  }, [currentUser?.uid, selectedTherapistId]);
 
   useEffect(() => {
     if (initialDate) {
@@ -116,9 +187,13 @@ export const BookingView: React.FC<BookingViewProps> = ({
   }, [initialDate]);
 
   const loadData = async () => {
-    const apts = await dbService.getAppointments();
-    const users = await dbService.getUsers();
-    const hList = await dbService.getHolidays();
+    const targetTherapistId = selectedTherapistId || initialTherapistId;
+    const [apts, users, hList, wh] = await Promise.all([
+      dbService.getAppointments(),
+      dbService.getUsers(),
+      dbService.getHolidays(),
+      dbService.getWorkingHours(targetTherapistId)
+    ]);
     
     setAppointments(apts);
     const clientList = users.filter(u => u.role === 'client');
@@ -130,66 +205,12 @@ export const BookingView: React.FC<BookingViewProps> = ({
       (currentUser?.role !== 'client' || u.isActive !== false || !!u.leaveEndDate)
     );
     setTherapists(availableTherapists);
-
-    let preselectedId = '';
-    if (currentUser?.role === 'admin' || currentUser?.role === 'hovedadmin') {
-      if (availableTherapists.some(t => t.uid === currentUser.uid)) {
-        preselectedId = currentUser.uid;
-      }
-    } else if (currentUser?.role === 'client') {
-      const clientApts = apts
-        .filter(a => a.clientId === currentUser.uid && a.status !== 'cancelled')
-        .sort((a, b) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime));
-
-      const lastAptWithTherapist = clientApts.find(a => a.therapistId);
-      if (lastAptWithTherapist && lastAptWithTherapist.therapistId && availableTherapists.some(t => t.uid === lastAptWithTherapist.therapistId)) {
-        preselectedId = lastAptWithTherapist.therapistId;
-      } else {
-        const savedPref = localStorage.getItem(`dintid_client_therapist_${currentUser.uid}`);
-        if (savedPref && availableTherapists.some(t => t.uid === savedPref)) {
-          preselectedId = savedPref;
-        }
-      }
-    }
-
-    if (!preselectedId || !availableTherapists.some(t => t.uid === preselectedId)) {
-      const activeNonLeave = availableTherapists.find(t => !isTherapistOnLeave(t));
-      preselectedId = activeNonLeave?.uid || availableTherapists[0]?.uid || '';
-    }
-
-    setSelectedTherapistId(preselectedId);
-
-    let wh: WorkingHoursConfig;
-    if (preselectedId) {
-      wh = await dbService.getWorkingHours(preselectedId);
-    } else {
-      wh = await dbService.getWorkingHours();
-    }
     setWorkingHours(wh);
 
     if (currentUser?.role === 'client') {
       setSelectedClientId(currentUser.uid);
-    } else if (clientList.length > 0) {
+    } else if (clientList.length > 0 && !selectedClientId) {
       setSelectedClientId(clientList[0].uid);
-    }
-
-    // Dersom ingen dato ble eksplisitt sendt inn og i dag er stengt (f.eks. helg), finn neste åpne dag
-    if (!initialDate) {
-      const todayStr = format(new Date(), 'yyyy-MM-dd');
-      const todayAvail = getDayAvailability(todayStr, wh, apts, hList);
-      if (todayAvail.status === 'closed') {
-        for (let i = 1; i <= 14; i++) {
-          const futureDate = new Date();
-          futureDate.setDate(futureDate.getDate() + i);
-          const fStr = format(futureDate, 'yyyy-MM-dd');
-          const fAvail = getDayAvailability(fStr, wh, apts, hList);
-          if (fAvail.status !== 'closed') {
-            setSelectedDate(futureDate);
-            setCurrentDate(futureDate);
-            break;
-          }
-        }
-      }
     }
   };
 
@@ -198,8 +219,23 @@ export const BookingView: React.FC<BookingViewProps> = ({
     if (currentUser?.role === 'client') {
       localStorage.setItem(`dintid_client_therapist_${currentUser.uid}`, therapistId);
     }
-    const wh = await dbService.getWorkingHours(therapistId);
-    setWorkingHours(wh);
+
+    // Momentan synkron oppdatering fra cache
+    const cachedWh = dbService.getCachedWorkingHours(therapistId);
+    setWorkingHours(cachedWh);
+
+    const th = therapists.find(t => t.uid === therapistId);
+    const dateStr = format(selectedDate, 'yyyy-MM-dd');
+    const avail = getDayAvailability(dateStr, cachedWh, appointments, holidays);
+    if (avail.status === 'closed') {
+      const nextOpen = getFirstOpenDate(new Date(), cachedWh, appointments, holidays, th);
+      setSelectedDate(nextOpen);
+      setCurrentDate(nextOpen);
+    }
+
+    // Bakgrunnsrevalidering
+    const freshWh = await dbService.getWorkingHours(therapistId);
+    setWorkingHours(freshWh);
   };
 
   const selectedTherapist = therapists.find(t => t.uid === selectedTherapistId) || therapists[0];
@@ -412,28 +448,13 @@ export const BookingView: React.FC<BookingViewProps> = ({
             <h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight">
               Bestill time
             </h1>
-            <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-              Velg behandler, type time og ønsket dato og tidspunkt.
-            </p>
-          </div>
-
-          {currentUser?.role !== 'client' && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-slate-500">Aktiv behandler:</span>
-              <select
-                aria-label="Behandler"
-                value={selectedTherapistId}
-                onChange={(e) => handleTherapistChange(e.target.value)}
-                className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none"
-              >
-                {therapists.map(t => (
-                  <option key={t.uid} value={t.uid}>
-                    {formatTherapistName(t.displayName)}
-                  </option>
-                ))}
-              </select>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-200 text-sky-800 text-[11px] font-semibold">
+                <Clock className="w-3.5 h-3.5 text-sky-600" />
+                <span>Åpningstider: <strong>{getWorkDaysSummary(workingHours)}</strong></span>
+              </span>
             </div>
-          )}
+          </div>
         </div>
       </div>
 
@@ -652,19 +673,29 @@ export const BookingView: React.FC<BookingViewProps> = ({
 
                 const isPastDate = isPast(day) && !isDayToday;
 
+                const nextOpenDate = getFirstOpenDate(
+                  new Date(selectedDate.getTime() + 86400000),
+                  workingHours,
+                  therapistAppointments,
+                  therapistHolidays,
+                  selectedTherapist
+                );
+
                 return (
                   <button
                     key={day.toISOString()}
-                    disabled={availability.status === 'closed' || isPastDate}
+                    disabled={isPastDate}
                     onClick={() => setSelectedDate(day)}
                     className={`min-h-[50px] sm:min-h-[64px] p-1.5 rounded-xl flex flex-col justify-between items-center transition-all border cursor-pointer ${
                       isSelected
                         ? 'ring-2 ring-sky-600 bg-sky-600 text-white border-sky-600 shadow-xs'
-                        : isPastDate || availability.status === 'closed'
+                        : isPastDate
                           ? 'bg-slate-50/50 text-slate-300 border-slate-100 opacity-60 cursor-not-allowed'
-                          : availability.status === 'fully_booked'
-                            ? 'bg-rose-50 text-rose-800 border-rose-200 hover:border-rose-300'
-                            : 'bg-white text-slate-800 border-slate-200 hover:border-sky-300 hover:bg-sky-50/40'
+                          : availability.status === 'closed'
+                            ? 'bg-slate-50/70 text-slate-400 border-slate-200 hover:border-slate-300 hover:bg-slate-100/60'
+                            : availability.status === 'fully_booked'
+                              ? 'bg-rose-50 text-rose-800 border-rose-200 hover:border-rose-300'
+                              : 'bg-white text-slate-800 border-slate-200 hover:border-sky-300 hover:bg-sky-50/40'
                     } ${!isCurrentMonth ? 'opacity-30' : 'opacity-100'}`}
                   >
                     <span className={`text-xs font-bold ${isSelected ? 'text-white' : ''}`}>
@@ -684,6 +715,8 @@ export const BookingView: React.FC<BookingViewProps> = ({
                       </span>
                     ) : availability.status === 'fully_booked' ? (
                       <span className="w-2 h-2 rounded-full bg-rose-500 shadow-2xs" title="Fullbooket" />
+                    ) : availability.status === 'closed' ? (
+                      <span className="text-[9px] text-slate-400 font-medium">Stengt</span>
                     ) : null}
                   </button>
                 );
@@ -707,14 +740,52 @@ export const BookingView: React.FC<BookingViewProps> = ({
           </div>
 
           {daySlots.length === 0 ? (
-            <div className="p-8 text-center bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-              <CalendarIcon className="w-8 h-8 text-slate-300 mx-auto" />
-              <p className="text-xs font-bold text-slate-700">Ingen oppsatte timer denne dagen</p>
-              <p className="text-[11px] text-slate-400">
-                {isSelectedDateOnLeave 
-                  ? 'Behandleren er registrert i permisjon/ferie.'
-                  : 'Klinikken er stengt eller har ingen åpningstider på denne datoen.'}
-              </p>
+            <div className="p-6 text-center bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
+                <CalendarIcon className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-slate-800">
+                  Ingen oppsatte timer denne dagen
+                </h4>
+                <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                  {isSelectedDateOnLeave 
+                    ? `${selectedTherapist ? formatTherapistName(selectedTherapist.displayName) : 'Behandleren'} er registrert i permisjon eller ferie på denne datoen.`
+                    : `${selectedTherapist ? formatTherapistName(selectedTherapist.displayName) : 'Behandleren'} har ikke ordinær åpningstid på ${format(selectedDate, 'EEEE', { locale: nb })}.`
+                  }
+                </p>
+                <p className="text-xs text-sky-700 font-semibold mt-1">
+                  Ordinære åpningstider: {getWorkDaysSummary(workingHours)}
+                </p>
+              </div>
+
+              {(() => {
+                const nextOpenDate = getFirstOpenDate(
+                  new Date(selectedDate.getTime() + 86400000),
+                  workingHours,
+                  therapistAppointments,
+                  therapistHolidays,
+                  selectedTherapist
+                );
+                if (nextOpenDate && !isSameDay(nextOpenDate, selectedDate)) {
+                  return (
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedDate(nextOpenDate);
+                          setCurrentDate(nextOpenDate);
+                        }}
+                        className="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-xs transition-all inline-flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <span>Gå til neste ledige dag ({format(nextOpenDate, 'EEEE d. MMMM', { locale: nb })})</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
           ) : (
             <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
