@@ -33,12 +33,13 @@ import {
   Edit2,
   ChevronDown,
   Eye,
-  EyeOff
+  EyeOff,
+  ShieldCheck
 } from 'lucide-react';
 import { formatTherapistName, isDateInHoliday, isTherapistOnLeave, generateTimeOptions } from '../../utils/calendar';
 
 export const SuperAdminPanel: React.FC = () => {
-  const { currentUser, updateUserPermissions } = useAuth();
+  const { currentUser, updateUserPermissions, open2FASetupModal } = useAuth();
   const [activeSubTab, setActiveSubTab] = useState<'working_hours' | 'admins' | 'sms'>('working_hours');
   
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -372,12 +373,18 @@ export const SuperAdminPanel: React.FC = () => {
 
   const handleSendTestSms = async () => {
     if (!testPhone || !testMessage) return;
-    setTestStatus('Sender test-SMS...');
+    setTestStatus('Sender test-SMS via GatewayAPI...');
     const res = await smsService.sendSms(testPhone, testMessage, 'booking');
-    setTestStatus(`SMS ${res.status === 'sent' ? 'sendt' : res.status === 'simulated' ? 'simulert' : 'feilet'} til ${testPhone}`);
+    if (res.status === 'sent') {
+      setTestStatus(`✅ SMS sendt vellykket til ${testPhone}!`);
+    } else if (res.status === 'simulated') {
+      setTestStatus(`ℹ️ Simulert SMS sendt (API-nøkkel ikke angitt)`);
+    } else {
+      setTestStatus(`❌ Feil: ${res.response || 'SMS feilet'}`);
+    }
     const logs = await dbService.getSmsLogs();
     setSmsLogs(logs);
-    setTimeout(() => setTestStatus(null), 4000);
+    setTimeout(() => setTestStatus(null), 8000);
   };
 
   const therapistList = users.filter(u => u.role === 'admin' || u.role === 'hovedadmin');
@@ -577,6 +584,21 @@ export const SuperAdminPanel: React.FC = () => {
                           >
                             <Edit2 className="w-3.5 h-3.5 text-sky-600" />
                             <span>Rediger</span>
+                          </button>
+
+                          {/* 2FA Google Authenticator knapp */}
+                          <button
+                            type="button"
+                            onClick={() => open2FASetupModal(therapist)}
+                            className={`px-2.5 py-1 rounded-lg border text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer ${
+                              therapist.twoFactorEnabled
+                                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                                : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-200'
+                            }`}
+                            title="Konfigurer Google Authenticator (2FA)"
+                          >
+                            <ShieldCheck className={`w-3.5 h-3.5 ${therapist.twoFactorEnabled ? 'text-emerald-600' : 'text-slate-400'}`} />
+                            <span>{therapist.twoFactorEnabled ? '2FA På' : 'Sett opp 2FA'}</span>
                           </button>
 
                           {/* Deaktiver / Aktiver knapp */}
@@ -1296,16 +1318,25 @@ export const SuperAdminPanel: React.FC = () => {
               ) : (
                 <div className="max-h-44 overflow-y-auto space-y-1.5">
                   {smsLogs.slice(0, 10).map((log) => (
-                    <div key={log.id} className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-[11px] flex items-center justify-between">
-                      <div>
-                        <span className="font-semibold text-slate-800">{log.recipientPhone}</span>
-                        <span className="text-slate-400 ml-1.5">({log.type})</span>
+                    <div key={log.id} className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-800">{log.recipientPhone}</span>
+                          <span className="text-slate-400">({log.type})</span>
+                        </div>
                         <p className="text-[10px] text-slate-500 truncate max-w-xs sm:max-w-md">{log.message}</p>
+                        {log.status === 'failed' && log.response && (
+                          <p className="text-[10px] text-rose-600 font-medium">{log.response}</p>
+                        )}
                       </div>
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                        log.status === 'sent' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold self-start sm:self-center flex-shrink-0 ${
+                        log.status === 'sent' 
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                          : log.status === 'failed'
+                          ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                          : 'bg-slate-200 text-slate-700'
                       }`}>
-                        {log.status === 'sent' ? 'Sendt' : 'Simulert'}
+                        {log.status === 'sent' ? 'Sendt' : log.status === 'failed' ? 'Feilet' : 'Simulert'}
                       </span>
                     </div>
                   ))}

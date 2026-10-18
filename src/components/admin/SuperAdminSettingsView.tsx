@@ -50,8 +50,14 @@ export const SuperAdminSettingsView: React.FC = () => {
     if (!testPhone || !testMessage) return;
     setTestStatus('Sender test-SMS via GatewayAPI...');
     const res = await smsService.sendSms(testPhone, testMessage, 'booking');
-    setTestStatus(`Resultat: SMS ${res.status === 'sent' ? 'sendt via GatewayAPI' : res.status === 'simulated' ? 'simulert (ingen API-nøkkel)' : 'feilet'} til ${testPhone}`);
-    setTimeout(() => setTestStatus(null), 5000);
+    if (res.status === 'sent') {
+      setTestStatus(`✅ SMS sendt vellykket til ${testPhone}!`);
+    } else if (res.status === 'simulated') {
+      setTestStatus(`ℹ️ Simulert SMS sendt (API-nøkkel ikke angitt)`);
+    } else {
+      setTestStatus(`❌ Feil: ${res.response || 'SMS feilet'}`);
+    }
+    setTimeout(() => setTestStatus(null), 8000);
   };
 
   const isKeyConfigured = Boolean(smsSettings?.apiKey && smsSettings.apiKey.trim().length > 5);

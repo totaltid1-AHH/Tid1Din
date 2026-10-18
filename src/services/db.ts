@@ -112,6 +112,7 @@ const SEED_USERS: UserProfile[] = [
     displayName: 'Dr. Kari Nordmann',
     phone: '90011000',
     twoFactorEnabled: true,
+    twoFactorSecret: 'JBSWY3DPEHPK3PXP',
     isActive: true,
     createdAt: new Date().toISOString()
   },

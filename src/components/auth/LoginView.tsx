@@ -5,15 +5,19 @@ import {
   Lock, 
   ArrowRight, 
   AlertCircle,
+  CheckCircle2,
   User
 } from 'lucide-react';
+import { ResetPasswordModal } from './ResetPasswordModal';
 
 export const LoginView: React.FC = () => {
   const { login, registerClient } = useAuth();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [successInfo, setSuccessInfo] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
 
   // Registrering modal
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
@@ -110,6 +114,13 @@ export const LoginView: React.FC = () => {
             </div>
           )}
 
+          {successInfo && (
+            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-600" />
+              <span>{successInfo}</span>
+            </div>
+          )}
+
           <form onSubmit={handleLoginSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
@@ -129,9 +140,22 @@ export const LoginView: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                Passord
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700 uppercase">
+                  Passord
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError('');
+                    setSuccessInfo('');
+                    setIsResetPasswordOpen(true);
+                  }}
+                  className="text-xs text-sky-600 hover:text-sky-800 font-semibold hover:underline"
+                >
+                  Glemt passord? (SMS)
+                </button>
+              </div>
               <div className="relative">
                 <input
                   type="password"
@@ -290,6 +314,17 @@ export const LoginView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* TILBAKESTILL PASSORD VIA SMS MODAL */}
+      <ResetPasswordModal
+        isOpen={isResetPasswordOpen}
+        onClose={() => setIsResetPasswordOpen(false)}
+        onPasswordResetSuccess={(resetIdentifier) => {
+          setIdentifier(resetIdentifier);
+          setPassword('');
+          setSuccessInfo('Passordet ditt ble tilbakestilt! Du kan nå logge inn med ditt nye passord.');
+        }}
+      />
 
     </div>
   );

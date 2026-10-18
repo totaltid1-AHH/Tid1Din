@@ -72,9 +72,13 @@ export class SmsService {
     appointmentId?: string
   ): Promise<SmsLog> {
     const settings = await dbService.getSmsSettings();
-    const cleanPhone = toPhone.replace(/\s+/g, '').replace('+', '');
-    // Sørg for landskode hvis norsk nummer uten prefiks
-    const formattedPhone = cleanPhone.length === 8 ? `47${cleanPhone}` : cleanPhone;
+    
+    // Rens telefonnummer til kun siffer
+    const rawDigits = toPhone.replace(/\D/g, '');
+    const cleanDigits = rawDigits.startsWith('00') ? rawDigits.substring(2) : rawDigits;
+    // Sørg for landskode hvis norsk mobilnummer uten prefiks (8 siffer)
+    const formattedDigits = cleanDigits.length === 8 ? `47${cleanDigits}` : cleanDigits;
+    const msisdnNumber = parseInt(formattedDigits, 10);
 
     const logEntry: SmsLog = {
       id: 'sms_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
@@ -86,36 +90,98 @@ export class SmsService {
       status: 'simulated'
     };
 
+    if (isNaN(msisdnNumber) || formattedDigits.length < 8) {
+      logEntry.status = 'failed';
+      logEntry.response = `Ugyldig telefonnummer: "${toPhone}". Vennligst oppgi et gyldig mobilnummer.`;
+      await dbService.logSms(logEntry);
+      return logEntry;
+    }
+
+    const apiKey = (settings.apiKey || '').trim();
+
     // Hvis ekte GatewayAPI-nøkkel er oppgitt, send ekte HTTP-forespørsel
-    if (settings.apiKey && settings.apiKey.length > 5) {
+    if (apiKey.length > 5) {
       try {
+        // Avsender (sender): GatewayAPI tillater maks 11 tegn (alfanumerisk) eller 15 siffer
+        const cleanSender = (settings.sender || 'Tid1Din').trim().substring(0, 11) || 'Tid1Din';
+
         const payload = {
-          sender: settings.sender || 'Tid1Din',
+          sender: cleanSender,
           message: message,
-          recipients: [{ msisdn: formattedPhone }]
+          recipients: [{ msisdn: msisdnNumber }]
         };
 
-        const response = await fetch('https://gatewayapi.com/rest/mtsms', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Basic ' + btoa(`${settings.apiKey}:`)
-          },
-          body: JSON.stringify(payload)
-        });
+        // Bruk lokal proxy på dev-server for å omgå nettleserens CORS-blokkering
+        const isLocalHost = typeof window !== 'undefined' && (
+          window.location.hostname === 'localhost' ||
+          window.location.hostname === '127.0.0.1' ||
+          window.location.port === '5173'
+        );
+
+        const endpoints = isLocalHost 
+          ? ['/api/gatewayapi/rest/mtsms', 'https://gatewayapi.com/rest/mtsms']
+          : [
+              'https://gatewayapi.com/rest/mtsms',
+              'https://corsproxy.io/?' + encodeURIComponent('https://gatewayapi.com/rest/mtsms')
+            ];
+
+        let response: Response | null = null;
+        let lastError: any = null;
+
+        for (const url of endpoints) {
+          try {
+            response = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Basic ' + btoa(`${apiKey}:`)
+              },
+              body: JSON.stringify(payload)
+            });
+            if (response) break;
+          } catch (e) {
+            lastError = e;
+          }
+        }
+
+        if (!response) {
+          throw lastError || new Error('Nettverksfeil mot GatewayAPI');
+        }
 
         if (response.ok) {
           const data = await response.json();
           logEntry.status = 'sent';
           logEntry.response = JSON.stringify(data);
         } else {
-          const errorText = await response.text();
+          const status = response.status;
+          let errorDetail = '';
+          try {
+            const errJson = await response.json();
+            errorDetail = errJson.message || JSON.stringify(errJson);
+          } catch {
+            errorDetail = await response.text();
+          }
+
           logEntry.status = 'failed';
-          logEntry.response = errorText;
+
+          if (status === 401) {
+            logEntry.response = `Feil 401 (Uautorisert): Ugyldig API-nøkkel. Sjekk at du har kopiert riktig token fra GatewayAPI > API > API Keys (uten ekstra mellomrom).`;
+          } else if (status === 402) {
+            logEntry.response = `Feil 402: Kontoen mangler SMS-kreditter. Fyll på saldo hos GatewayAPI.com.`;
+          } else if (status === 422) {
+            logEntry.response = `Feil 422 (Ugyldig data): ${errorDetail || 'Sjekk at mottakerens telefonnummer og avsendernavn er gyldig.'}`;
+          } else {
+            logEntry.response = `GatewayAPI feil (${status}): ${errorDetail}`;
+          }
         }
       } catch (err: any) {
         logEntry.status = 'failed';
-        logEntry.response = err.message || 'Nettverksfeil mot GatewayAPI';
+        const msg = err.message || '';
+        if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('CORS')) {
+          logEntry.response = 'CORS/Nettverksfeil: Nettleseren blokkerte direkte forespørsel mot GatewayAPI. Sørg for at appen kjører med lokal utviklingsserver (npm run dev) som har proxy aktivert, eller sjekk nettforbindelsen.';
+        } else {
+          logEntry.response = msg || 'Ukjent nettverksfeil mot GatewayAPI';
+        }
       }
     } else {
       // Simuleringsmodus når API-nøkkel ikke er lagt inn

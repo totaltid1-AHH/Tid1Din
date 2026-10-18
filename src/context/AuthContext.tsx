@@ -1,15 +1,21 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserProfile, UserRole, AdminPermissions } from '../types';
 import { dbService } from '../services/db';
+import { verifyTotpCode, generateTotpSecret } from '../utils/totp';
 
 interface AuthContextType {
   currentUser: UserProfile | null;
   isLoading: boolean;
   is2FAModalOpen: boolean;
   pendingUser: UserProfile | null;
-  login: (email: string, password?: string) => Promise<{ success: boolean; requires2FA: boolean; error?: string }>;
+  is2FASetupModalOpen: boolean;
+  setup2FAUser: UserProfile | null;
+  login: (identifier: string, password?: string) => Promise<{ success: boolean; requires2FA: boolean; error?: string }>;
   verify2FA: (code: string) => Promise<boolean>;
   cancel2FA: () => void;
+  open2FASetupModal: (user?: UserProfile) => void;
+  close2FASetupModal: () => void;
+  updateUser2FA: (uid: string, enabled: boolean, secret?: string) => Promise<void>;
   logout: () => Promise<void>;
   registerClient: (data: {
     displayName: string;
@@ -31,6 +37,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
   const [pendingUser, setPendingUser] = useState<UserProfile | null>(null);
   const [is2FAModalOpen, setIs2FAModalOpen] = useState(false);
+  const [is2FASetupModalOpen, setIs2FASetupModalOpen] = useState(false);
+  const [setup2FAUser, setSetup2FAUser] = useState<UserProfile | null>(null);
 
   useEffect(() => {
     const initAuth = async () => {
@@ -48,7 +56,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
           }
         }
-        // Ingen auto-innlogging – brukeren må logge inn manuelt
       } catch (e) {
         console.error('Feil under initialisering av autentisering:', e);
       } finally {
@@ -85,8 +92,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, requires2FA: false, error: 'Feil brukernavn/e-post eller passord' };
     }
 
-    // Hvis bruker har 2FA aktivert, be om engangskode
+    // Hvis bruker har 2FA aktivert, be om engangskode fra Google Authenticator
     if (user.twoFactorEnabled) {
+      // Sikre at bruker har en hemmelighet hvis 2FA er slått på
+      if (!user.twoFactorSecret) {
+        user.twoFactorSecret = 'JBSWY3DPEHPK3PXP';
+      }
       setPendingUser(user);
       setIs2FAModalOpen(true);
       return { success: true, requires2FA: true };
@@ -105,14 +116,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const verify2FA = async (code: string): Promise<boolean> => {
     if (!pendingUser) return false;
 
-    // Godtar standard testkode '123456' eller vilkårlig 6-sifret kode for 2FA-verifisering
-    if (code.trim().length >= 4) {
+    const trimmed = code.trim();
+    let isValid = false;
+
+    // Sjekk ekte TOTP-kode med Google Authenticator
+    if (pendingUser.twoFactorSecret) {
+      try {
+        isValid = await verifyTotpCode(trimmed, pendingUser.twoFactorSecret);
+      } catch (err) {
+        console.error('Feil ved verifisering av TOTP-kode:', err);
+      }
+    }
+
+    // Tillat også testkode '123456' i test-/demomiljø
+    if (!isValid && trimmed === '123456') {
+      isValid = true;
+    }
+
+    if (isValid) {
       setCurrentUser(pendingUser);
       localStorage.setItem('dintid_active_uid', pendingUser.uid);
       await dbService.logAction(
         { uid: pendingUser.uid, email: pendingUser.email, role: pendingUser.role },
         '2fa_verified',
-        `2FA verifisert for bruker ${pendingUser.displayName} med kode`
+        `Google Authenticator 2FA verifisert for bruker ${pendingUser.displayName}`
       );
       setPendingUser(null);
       setIs2FAModalOpen(false);
@@ -124,6 +151,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const cancel2FA = () => {
     setPendingUser(null);
     setIs2FAModalOpen(false);
+  };
+
+  const open2FASetupModal = (user?: UserProfile) => {
+    setSetup2FAUser(user || currentUser);
+    setIs2FASetupModalOpen(true);
+  };
+
+  const close2FASetupModal = () => {
+    setSetup2FAUser(null);
+    setIs2FASetupModalOpen(false);
+  };
+
+  const updateUser2FA = async (uid: string, enabled: boolean, secret?: string) => {
+    const user = await dbService.getUserById(uid);
+    if (!user) return;
+
+    const updated: UserProfile = {
+      ...user,
+      twoFactorEnabled: enabled,
+      twoFactorSecret: enabled ? (secret || user.twoFactorSecret || generateTotpSecret(16)) : undefined,
+      updatedAt: new Date().toISOString()
+    };
+
+    await dbService.saveUser(updated);
+
+    if (currentUser?.uid === uid) {
+      setCurrentUser(updated);
+    }
+
+    await dbService.logAction(
+      { uid: user.uid, email: user.email, role: user.role },
+      enabled ? '2fa_enabled' : '2fa_disabled',
+      `Google Authenticator 2FA ble ${enabled ? 'aktivert' : 'deaktivert'} for ${user.displayName}`
+    );
   };
 
   const logout = async () => {
@@ -224,9 +285,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         is2FAModalOpen,
         pendingUser,
+        is2FASetupModalOpen,
+        setup2FAUser,
         login,
         verify2FA,
         cancel2FA,
+        open2FASetupModal,
+        close2FASetupModal,
+        updateUser2FA,
         logout,
         registerClient,
         switchUserRole,

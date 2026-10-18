@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Sidebar } from './components/common/Sidebar';
 import { TwoFactorModal } from './components/auth/TwoFactorModal';
+import { TwoFactorSetupModal } from './components/auth/TwoFactorSetupModal';
 import { LoginView } from './components/auth/LoginView';
 import { CalendarView } from './components/calendar/CalendarView';
 import { UserCalendarView } from './components/calendar/UserCalendarView';
@@ -15,7 +16,14 @@ import { JournalView } from './components/journal/JournalView';
 import { ShieldCheck, ShieldAlert, Lock, Calendar as CalendarIcon, LayoutDashboard, Users, Settings, BookOpen } from 'lucide-react';
 
 const AppContent: React.FC = () => {
-  const { currentUser, isLoading } = useAuth();
+  const { 
+    currentUser, 
+    isLoading, 
+    is2FASetupModalOpen, 
+    setup2FAUser, 
+    close2FASetupModal, 
+    updateUser2FA 
+  } = useAuth();
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [bookingInitialDate, setBookingInitialDate] = useState<string | undefined>(undefined);
   const [selectedJournalClientId, setSelectedJournalClientId] = useState<string | null>(null);
@@ -62,6 +70,16 @@ const AppContent: React.FC = () => {
   return (
     <div className={`min-h-screen bg-slate-50 flex flex-col justify-between lg:pl-64 ${isJournalTab ? 'h-[100dvh] max-h-[100dvh] overflow-hidden' : ''}`}>
       <TwoFactorModal />
+      <TwoFactorSetupModal
+        isOpen={is2FASetupModalOpen}
+        user={setup2FAUser}
+        onClose={close2FASetupModal}
+        onSave={async (enabled, secret) => {
+          if (setup2FAUser) {
+            await updateUser2FA(setup2FAUser.uid, enabled, secret);
+          }
+        }}
+      />
       
       {/* Svart sidefeltmeny (venstre side på desktop, topplinje + skuff på mobil/iPad stående) */}
       <Sidebar currentTab={currentTab} setCurrentTab={handleNavTab} />

@@ -23,7 +23,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) => {
-  const { currentUser, logout, switchUserRole } = useAuth();
+  const { currentUser, logout, switchUserRole, open2FASetupModal } = useAuth();
   const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -163,12 +163,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
         <div className="px-1 py-1 mb-2">
           <div className="flex items-center justify-between mb-1">
             <p className="text-sm font-bold text-white truncate max-w-[140px]">{currentUser.displayName}</p>
-            {currentUser.twoFactorEnabled && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400" title="2FA aktivert">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span>2FA</span>
-              </span>
-            )}
+            <button
+              type="button"
+              onClick={() => open2FASetupModal()}
+              className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-md transition-colors ${
+                currentUser.twoFactorEnabled 
+                  ? 'text-emerald-400 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60' 
+                  : 'text-slate-400 bg-slate-900 hover:text-slate-200 border border-slate-800'
+              }`}
+              title="Konfigurer Google Authenticator (2FA)"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span>{currentUser.twoFactorEnabled ? '2FA På' : '+ 2FA'}</span>
+            </button>
           </div>
           <div className="flex items-center gap-1.5">
             {getRoleBadge()}
