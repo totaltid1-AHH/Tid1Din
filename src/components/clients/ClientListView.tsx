@@ -233,12 +233,11 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
       {/* Kolonnebasert tabellvisning for klienter */}
       <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-slate-200 shadow-xs overflow-hidden w-full">
         <div className="overflow-x-auto max-w-full">
-          <table className="w-full text-left text-xs text-slate-600 min-w-[550px]">
+          <table className="w-full text-left text-xs text-slate-600 min-w-[460px]">
             <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] border-b border-slate-200">
               <tr>
                 <th className="py-3 px-4">Klient / Navn</th>
                 <th className="py-3 px-3">Telefon</th>
-                <th className="py-3 px-3">Fødselsdato</th>
                 <th className="py-3 px-3">Status</th>
                 <th className="py-3 px-4 text-right">Handlinger</th>
               </tr>
@@ -246,7 +245,7 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
             <tbody className="divide-y divide-slate-100">
               {filteredClients.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-slate-400 italic">
+                  <td colSpan={4} className="py-8 text-center text-slate-400 italic">
                     Ingen klienter funnet som matcher søket.
                   </td>
                 </tr>
@@ -292,15 +291,6 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
                           <span className={canViewPhone ? "text-slate-400 italic" : "text-slate-500 font-mono"}>
                             {displayPhone}
                           </span>
-                        )}
-                      </td>
-
-                      {/* Fødselsdato */}
-                      <td className="py-3 px-3 text-slate-600">
-                        {client.birthDate ? (
-                          <span className="font-mono text-[11px] block text-slate-700">{client.birthDate}</span>
-                        ) : (
-                          <span className="text-slate-400 italic text-[11px]">-</span>
                         )}
                       </td>
 
