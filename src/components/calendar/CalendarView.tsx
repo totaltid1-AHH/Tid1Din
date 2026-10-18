@@ -251,20 +251,87 @@ export const CalendarView: React.FC = () => {
     ? generateDaySlots(selectedDateStr, workingHours, therapistAppointments, therapistHolidays)
     : [];
 
+  const currentClientId = currentUser?.role === 'client' ? currentUser.uid : selectedClientId;
+  const bookingStartMin = parseMinutes(bookingStartTime);
+  const bookingEndMin = parseMinutes(bookingEndTime);
+
+  // Kollisjonssjekk for behandler (overlappende tidsrom med eksisterende bekreftet avtale)
+  const therapistCollision = appointments.find(a => {
+    if (a.date !== selectedDateStr || a.status === 'cancelled') return false;
+    if (editingAppointmentId && a.id === editingAppointmentId) return false;
+    const aTherapistId = a.therapistId || therapists[0]?.uid;
+    if (aTherapistId !== selectedTherapistId) return false;
+    const aStart = parseMinutes(a.startTime);
+    const aEnd = parseMinutes(a.endTime);
+    return bookingStartMin < aEnd && bookingEndMin > aStart;
+  });
+
+  // Kollisjonssjekk for klient (klienten kan ikke bookes inn på to timer samtidig)
+  const clientCollision = appointments.find(a => {
+    if (a.date !== selectedDateStr || a.status === 'cancelled') return false;
+    if (editingAppointmentId && a.id === editingAppointmentId) return false;
+    if (!currentClientId || a.clientId !== currentClientId) return false;
+    const aStart = parseMinutes(a.startTime);
+    const aEnd = parseMinutes(a.endTime);
+    return bookingStartMin < aEnd && bookingEndMin > aStart;
+  });
+
+  const getSmartInitialStartTime = (dayStr: string, therapistId: string, durMin: number): string => {
+    const dayApts = appointments.filter(a => 
+      a.date === dayStr && 
+      a.status !== 'cancelled' && 
+      (a.therapistId ? a.therapistId === therapistId : therapists[0]?.uid === therapistId)
+    ).sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+    let initialStart = '10:00';
+    const initStartMin = parseMinutes(initialStart);
+    const initEndMin = initStartMin + durMin;
+
+    const overlaps10 = dayApts.find(a => {
+      const aStart = parseMinutes(a.startTime);
+      const aEnd = parseMinutes(a.endTime);
+      return initStartMin < aEnd && initEndMin > aStart;
+    });
+
+    if (overlaps10) {
+      const nextCandidateMin = parseMinutes(overlaps10.endTime);
+      const overlapsNext = dayApts.find(a => {
+        const aStart = parseMinutes(a.startTime);
+        const aEnd = parseMinutes(a.endTime);
+        return nextCandidateMin < aEnd && (nextCandidateMin + durMin) > aStart;
+      });
+
+      if (!overlapsNext) {
+        initialStart = overlaps10.endTime;
+      } else {
+        const lastApt = dayApts[dayApts.length - 1];
+        if (lastApt) {
+          initialStart = lastApt.endTime;
+        }
+      }
+    }
+    return initialStart;
+  };
+
   const handleDayClick = (day: Date) => {
     setSelectedDate(day);
+    let targetTherapistId = selectedTherapistId;
     if (currentUser?.role === 'admin' || currentUser?.role === 'hovedadmin') {
       if (therapists.some(t => t.uid === currentUser.uid)) {
         if (selectedTherapistId !== currentUser.uid) {
           handleTherapistChange(currentUser.uid);
+          targetTherapistId = currentUser.uid;
         }
       }
     }
+    const dayStr = format(day, 'yyyy-MM-dd');
     const clinicDur = workingHours?.slotDurationMinutes || 45;
+    const initialStart = getSmartInitialStartTime(dayStr, targetTherapistId, clinicDur);
+
     setEditingAppointmentId(null);
     setCancellingAptId(null);
-    setBookingStartTime('10:00');
-    setBookingEndTime(calculateEndTime('10:00', clinicDur / 60));
+    setBookingStartTime(initialStart);
+    setBookingEndTime(calculateEndTime(initialStart, clinicDur / 60));
     setBookingSuggestedType('single');
     setBookingPrice(workingHours?.prices?.single ?? 950);
     setBookingNotes('');
@@ -301,8 +368,9 @@ export const CalendarView: React.FC = () => {
   const handleCancelEditAppointment = () => {
     setEditingAppointmentId(null);
     const clinicDur = workingHours?.slotDurationMinutes || 45;
-    setBookingStartTime('10:00');
-    setBookingEndTime(calculateEndTime('10:00', clinicDur / 60));
+    const initialStart = getSmartInitialStartTime(selectedDateStr, selectedTherapistId, clinicDur);
+    setBookingStartTime(initialStart);
+    setBookingEndTime(calculateEndTime(initialStart, clinicDur / 60));
     setBookingSuggestedType('single');
     setBookingPrice(workingHours?.prices?.single ?? 950);
     setBookingNotes('');
@@ -413,6 +481,17 @@ export const CalendarView: React.FC = () => {
       alert('Sluttidspunkt må være etter starttidspunkt.');
       return;
     }
+
+    if (therapistCollision) {
+      alert(`Kan ikke bestille: Tidspunktet kl. ${bookingStartTime}–${bookingEndTime} overlapper med en eksisterende avtale for behandler (kl. ${therapistCollision.startTime}–${therapistCollision.endTime}).`);
+      return;
+    }
+
+    if (clientCollision) {
+      alert(`Kan ikke bestille: Klienten har allerede en avtale på dette tidspunktet (kl. ${clientCollision.startTime}–${clientCollision.endTime}).`);
+      return;
+    }
+
     setIsSubmittingBooking(true);
 
     try {
@@ -1322,6 +1401,33 @@ export const CalendarView: React.FC = () => {
                   />
                 </div>
 
+                {/* Kollisjonsvarsel dersom tidspunkt overlapper */}
+                {therapistCollision && (
+                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 text-xs flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">Tidspunktet er opptatt for behandler</span>
+                      <span>
+                        {selectedTherapist?.displayName || 'Behandler'} har allerede en avtale i dette tidsrommet (kl. {therapistCollision.startTime}–{therapistCollision.endTime}
+                        {therapistCollision.clientName && currentUser?.role !== 'client' ? ` for ${therapistCollision.clientName}` : ''}).
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {clientCollision && clientCollision.id !== therapistCollision?.id && (
+                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 text-xs flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">Tidspunktet er opptatt for klienten</span>
+                      <span>
+                        Klienten har allerede en avtale i dette tidsrommet (kl. {clientCollision.startTime}–{clientCollision.endTime}
+                        {clientCollision.therapistName ? ` hos ${clientCollision.therapistName}` : ''}).
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Knapper */}
                 <div className="flex gap-2 pt-1">
                   <button
@@ -1338,7 +1444,11 @@ export const CalendarView: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    disabled={isSubmittingBooking || calculateDurationMinutes(bookingStartTime, bookingEndTime) <= 0}
+                    disabled={
+                      isSubmittingBooking || 
+                      calculateDurationMinutes(bookingStartTime, bookingEndTime) <= 0 ||
+                      Boolean(therapistCollision || clientCollision)
+                    }
                     onClick={handleConfirmBooking}
                     className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                       editingAppointmentId

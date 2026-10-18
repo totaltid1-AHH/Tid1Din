@@ -278,12 +278,25 @@ export const BookingView: React.FC<BookingViewProps> = ({
   const startMin = parseMinutes(startTime);
   const endMin = parseMinutes(endTime);
   const durationMinutes = calculateDurationMinutes(startTime, endTime);
+  const targetClientId = currentUser?.role === 'client' ? currentUser.uid : selectedClientId;
 
-  const collidingAppointment = dayAppointments.find(a => {
+  // Kollisjon for behandler
+  const therapistCollision = dayAppointments.find(a => {
     const aStart = parseMinutes(a.startTime);
     const aEnd = parseMinutes(a.endTime);
     return startMin < aEnd && endMin > aStart;
   });
+
+  // Kollisjon for klient (uansett behandler)
+  const clientCollision = appointments.find(a => {
+    if (a.date !== selectedDateStr || a.status === 'cancelled') return false;
+    if (!targetClientId || a.clientId !== targetClientId) return false;
+    const aStart = parseMinutes(a.startTime);
+    const aEnd = parseMinutes(a.endTime);
+    return startMin < aEnd && endMin > aStart;
+  });
+
+  const collidingAppointment = therapistCollision || clientCollision;
 
   const clinicSlotMinutes = workingHours?.slotDurationMinutes || 45;
 
@@ -343,6 +356,48 @@ export const BookingView: React.FC<BookingViewProps> = ({
     }
   };
 
+  const handleSelectDate = (day: Date) => {
+    setSelectedDate(day);
+    const dayStr = format(day, 'yyyy-MM-dd');
+    const dayApts = therapistAppointments.filter(
+      a => a.date === dayStr && a.status !== 'cancelled'
+    ).sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+    const durHours = suggestedHours || (clinicSlotMinutes / 60);
+    const durMin = Math.round(durHours * 60);
+
+    let initialStart = '10:00';
+    const initStartMin = parseMinutes(initialStart);
+    const initEndMin = initStartMin + durMin;
+
+    const overlaps10 = dayApts.find(a => {
+      const aStart = parseMinutes(a.startTime);
+      const aEnd = parseMinutes(a.endTime);
+      return initStartMin < aEnd && initEndMin > aStart;
+    });
+
+    if (overlaps10) {
+      const nextCandidateMin = parseMinutes(overlaps10.endTime);
+      const overlapsNext = dayApts.find(a => {
+        const aStart = parseMinutes(a.startTime);
+        const aEnd = parseMinutes(a.endTime);
+        return nextCandidateMin < aEnd && (nextCandidateMin + durMin) > aStart;
+      });
+
+      if (!overlapsNext) {
+        initialStart = overlaps10.endTime;
+      } else {
+        const lastApt = dayApts[dayApts.length - 1];
+        if (lastApt) {
+          initialStart = lastApt.endTime;
+        }
+      }
+    }
+
+    setStartTime(initialStart);
+    setEndTime(calculateEndTime(initialStart, durHours));
+  };
+
   const handleConfirmBooking = async () => {
     if (!currentUser) {
       alert('Du må være innlogget for å bestille time.');
@@ -359,14 +414,14 @@ export const BookingView: React.FC<BookingViewProps> = ({
       return;
     }
 
-    if (collidingAppointment && currentUser?.role === 'client') {
-      alert(`Tidspunktet kl. ${startTime}–${endTime} overlapper med en eksisterende avtale (kl. ${collidingAppointment.startTime}–${collidingAppointment.endTime}). Vennligst velg et annet tidspunkt.`);
+    if (therapistCollision) {
+      alert(`Kan ikke bestille: Tidspunktet kl. ${startTime}–${endTime} overlapper med en eksisterende avtale for behandler (kl. ${therapistCollision.startTime}–${therapistCollision.endTime}). Vennligst velg et annet tidspunkt.`);
       return;
     }
 
-    if (collidingAppointment && (currentUser?.role === 'admin' || currentUser?.role === 'hovedadmin')) {
-      const ok = window.confirm(`Merk: Tidspunktet overlapper med en eksisterende avtale (kl. ${collidingAppointment.startTime}–${collidingAppointment.endTime}). Vil du likevel bestille?`);
-      if (!ok) return;
+    if (clientCollision) {
+      alert(`Kan ikke bestille: Klienten har allerede en avtale på dette tidspunktet (kl. ${clientCollision.startTime}–${clientCollision.endTime}). Vennligst velg et annet tidspunkt.`);
+      return;
     }
 
     let clientObj: UserProfile | undefined;
@@ -647,7 +702,7 @@ export const BookingView: React.FC<BookingViewProps> = ({
                   <button
                     key={day.toISOString()}
                     disabled={isPastDate}
-                    onClick={() => setSelectedDate(day)}
+                    onClick={() => handleSelectDate(day)}
                     className={`min-h-[50px] sm:min-h-[60px] p-1.5 rounded-xl flex flex-col justify-between items-center transition-all border cursor-pointer ${
                       isSelected
                         ? 'ring-2 ring-sky-600 bg-sky-600 text-white border-sky-600 shadow-xs'
@@ -908,15 +963,29 @@ export const BookingView: React.FC<BookingViewProps> = ({
             </div>
 
             {/* OVERLAPP-ADVARSEL */}
-            {collidingAppointment && (
-              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex items-start gap-2.5">
-                <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            {therapistCollision && (
+              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-950 text-xs flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-bold text-amber-900">
-                    Obs: Tidspunktet overlapper med en eksisterende avtale
+                  <p className="font-bold text-rose-900">
+                    Tidspunktet er opptatt for behandler
                   </p>
-                  <p className="text-amber-800 mt-0.5">
-                    Det er allerede registrert en avtale fra kl. <strong>{collidingAppointment.startTime}</strong> til <strong>{collidingAppointment.endTime}</strong> denne dagen.
+                  <p className="text-rose-800 mt-0.5">
+                    Det er allerede registrert en avtale fra kl. <strong>{therapistCollision.startTime}</strong> til <strong>{therapistCollision.endTime}</strong> for {formatTherapistName(selectedTherapist?.displayName)} denne dagen{therapistCollision.clientName && currentUser?.role !== 'client' ? ` (${therapistCollision.clientName})` : ''}.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {clientCollision && clientCollision.id !== therapistCollision?.id && (
+              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-950 text-xs flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-rose-900">
+                    Tidspunktet er opptatt for klienten
+                  </p>
+                  <p className="text-rose-800 mt-0.5">
+                    Klienten har allerede en avtale fra kl. <strong>{clientCollision.startTime}</strong> til <strong>{clientCollision.endTime}</strong> denne dagen{clientCollision.therapistName ? ` hos ${clientCollision.therapistName}` : ''}.
                   </p>
                 </div>
               </div>
@@ -926,7 +995,7 @@ export const BookingView: React.FC<BookingViewProps> = ({
             <div className="pt-2">
               <button
                 type="button"
-                disabled={isSubmittingBooking || durationMinutes <= 0}
+                disabled={isSubmittingBooking || durationMinutes <= 0 || Boolean(therapistCollision || clientCollision)}
                 onClick={handleConfirmBooking}
                 className="w-full py-3 px-4 rounded-xl bg-sky-600 hover:bg-sky-700 active:scale-98 text-white font-bold text-xs sm:text-sm shadow-md shadow-sky-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
