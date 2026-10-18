@@ -44,6 +44,7 @@ import {
   isDateInHoliday,
   isTherapistOnLeave
 } from '../../utils/calendar';
+import { TimeRangeSelector } from './TimeRangeSelector';
 
 interface BookingViewProps {
   onNavigateToCalendar: () => void;
@@ -829,36 +830,14 @@ export const BookingView: React.FC<BookingViewProps> = ({
               </div>
             )}
 
-            {/* TIDSPUNKT: STARTTID OG SLUTTID */}
-            <div className="flex items-center gap-3 sm:gap-4 w-full">
-              
-              {/* Starttid */}
-              <div className="flex-1 min-w-0">
-                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1 truncate">
-                  Starttid
-                </label>
-                <input
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => handleStartTimeChange(e.target.value)}
-                  className="w-full h-10 px-2.5 text-center rounded-xl border border-slate-300 font-mono text-sm font-extrabold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 box-border block"
-                />
-              </div>
-
-              {/* Sluttid */}
-              <div className="flex-1 min-w-0">
-                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1 truncate">
-                  Sluttid
-                </label>
-                <input
-                  type="time"
-                  value={endTime}
-                  onChange={(e) => handleEndTimeChange(e.target.value)}
-                  className="w-full h-10 px-2.5 text-center rounded-xl border border-slate-300 font-mono text-sm font-extrabold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 box-border block"
-                />
-              </div>
-
-            </div>
+            {/* TIDSPUNKT: STARTTID OG SLUTTID (iPad/mobil-sikret uten overlapp) */}
+            <TimeRangeSelector
+              startTime={startTime}
+              endTime={endTime}
+              onStartTimeChange={handleStartTimeChange}
+              onEndTimeChange={handleEndTimeChange}
+              durationMinutes={durationMinutes}
+            />
 
             {/* Hurtigvalg av varighet tilpasset Klinikk-oppsettet (uten 'Forslag til sluttid:'-tekst) */}
             <div className="grid grid-cols-3 gap-1.5 pt-0.5">

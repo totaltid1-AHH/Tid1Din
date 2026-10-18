@@ -23,6 +23,32 @@ export function formatMinutes(totalMinutes: number): string {
 }
 
 /**
+ * Genererer liste over standard klokkeslett (hvert 15. minutt fra 06:00 til 22:00)
+ * og inkluderer eventuelle egendefinerte klokkeslett så de aldri mangler i listen.
+ */
+export function generateTimeOptions(customValues?: (string | undefined)[]): string[] {
+  const options: string[] = [];
+  for (let h = 6; h <= 22; h++) {
+    for (let m = 0; m < 60; m += 15) {
+      if (h === 22 && m > 0) break;
+      options.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+    }
+  }
+  if (customValues) {
+    for (const val of customValues) {
+      if (val && /^\d{1,2}:\d{2}$/.test(val)) {
+        const [hh, mm] = val.split(':');
+        const formatted = `${hh.padStart(2, '0')}:${mm}`;
+        if (!options.includes(formatted)) {
+          options.push(formatted);
+        }
+      }
+    }
+  }
+  return options.sort((a, b) => a.localeCompare(b));
+}
+
+/**
  * Renser bort eventuelle "Terapeut:" prefikser eller parenteser
  */
 export function formatTherapistName(name?: string): string {
