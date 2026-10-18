@@ -31,7 +31,9 @@ import {
   UserX,
   X,
   Edit2,
-  ChevronDown
+  ChevronDown,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { formatTherapistName, isDateInHoliday, isTherapistOnLeave, generateTimeOptions } from '../../utils/calendar';
 
@@ -54,12 +56,26 @@ export const SuperAdminPanel: React.FC = () => {
   const [isNewAdminOpen, setIsNewAdminOpen] = useState(false);
   const [newAdminName, setNewAdminName] = useState('');
   const [newAdminUsername, setNewAdminUsername] = useState('');
+  const [newAdminPassword, setNewAdminPassword] = useState('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [newAdminPhone, setNewAdminPhone] = useState('');
+  const [newAdminIsActive, setNewAdminIsActive] = useState(true);
+  const [newAdminRole, setNewAdminRole] = useState<'admin' | 'hovedadmin'>('admin');
+  const [newAdminPerms, setNewAdminPerms] = useState<AdminPermissions>({
+    canViewClientName: true,
+    canViewClientPhone: true,
+    canViewClientEmail: true,
+    canEditJournals: true,
+    canManageAppointments: true
+  });
+  const [showNewAdminPassword, setShowNewAdminPassword] = useState(false);
 
   // Redigering av terapeut
   const [editingTherapist, setEditingTherapist] = useState<UserProfile | null>(null);
   const [isEditTherapistOpen, setIsEditTherapistOpen] = useState(false);
   const [editTherapistName, setEditTherapistName] = useState('');
+  const [editTherapistUsername, setEditTherapistUsername] = useState('');
+  const [editTherapistPassword, setEditTherapistPassword] = useState('');
   const [editTherapistEmail, setEditTherapistEmail] = useState('');
   const [editTherapistPhone, setEditTherapistPhone] = useState('');
   const [editTherapistIsActive, setEditTherapistIsActive] = useState(true);
@@ -70,6 +86,7 @@ export const SuperAdminPanel: React.FC = () => {
     canEditJournals: true,
     canManageAppointments: true
   });
+  const [showEditTherapistPassword, setShowEditTherapistPassword] = useState(false);
 
   // Ferie & Fravær tilstand
   const [isAddingHoliday, setIsAddingHoliday] = useState(false);
@@ -175,6 +192,8 @@ export const SuperAdminPanel: React.FC = () => {
   const handleOpenEditTherapist = (therapist: UserProfile) => {
     setEditingTherapist(therapist);
     setEditTherapistName(therapist.displayName);
+    setEditTherapistUsername(therapist.username || '');
+    setEditTherapistPassword(therapist.password || '');
     setEditTherapistEmail(therapist.email);
     setEditTherapistPhone(therapist.phone || '');
     setEditTherapistIsActive(therapist.isActive !== false);
@@ -185,6 +204,7 @@ export const SuperAdminPanel: React.FC = () => {
       canEditJournals: true,
       canManageAppointments: true
     });
+    setShowEditTherapistPassword(false);
     setIsEditTherapistOpen(true);
   };
 
@@ -194,8 +214,10 @@ export const SuperAdminPanel: React.FC = () => {
     const updatedUser: UserProfile = {
       ...editingTherapist,
       displayName: editTherapistName.trim(),
+      username: editTherapistUsername.trim() || undefined,
+      password: editTherapistPassword.trim() || undefined,
       email: editTherapistEmail.trim(),
-      phone: editTherapistPhone.trim(),
+      phone: editTherapistPhone.trim() || undefined,
       isActive: editTherapistIsActive,
       ...(editingTherapist.role === 'admin' ? { permissions: editTherapistPerms } : {})
     };
@@ -297,34 +319,48 @@ export const SuperAdminPanel: React.FC = () => {
   };
 
 
+  const resetNewAdminForm = () => {
+    setNewAdminName('');
+    setNewAdminUsername('');
+    setNewAdminPassword('');
+    setNewAdminEmail('');
+    setNewAdminPhone('');
+    setNewAdminIsActive(true);
+    setNewAdminRole('admin');
+    setNewAdminPerms({
+      canViewClientName: true,
+      canViewClientPhone: true,
+      canViewClientEmail: true,
+      canEditJournals: true,
+      canManageAppointments: true
+    });
+    setShowNewAdminPassword(false);
+  };
+
   const handleCreateAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAdminName || !newAdminEmail || !currentUser) return;
 
     const newAdmin: UserProfile = {
       uid: 'u_admin_' + Date.now(),
-      email: newAdminEmail,
+      email: newAdminEmail.trim(),
       username: newAdminUsername.trim() || undefined,
-      role: 'admin',
-      displayName: newAdminName,
+      password: newAdminPassword.trim() || undefined,
+      role: newAdminRole,
+      displayName: newAdminName.trim(),
+      phone: newAdminPhone.trim() || undefined,
       twoFactorEnabled: false,
-      permissions: {
-        canViewClientName: true,
-        canViewClientPhone: false,
-        canViewClientEmail: false,
-        canEditJournals: true,
-        canManageAppointments: true
-      },
+      isActive: newAdminIsActive,
+      permissions: newAdminPerms,
       createdAt: new Date().toISOString()
     };
 
     await dbService.saveUser(newAdmin);
     setIsNewAdminOpen(false);
-    setNewAdminName('');
-    setNewAdminUsername('');
-    setNewAdminEmail('');
+    resetNewAdminForm();
     await loadAllAdminData();
-
+    setSaveSuccessMessage(`Ny ansatt/terapeut ${newAdmin.displayName} ble opprettet!`);
+    setTimeout(() => setSaveSuccessMessage(null), 3000);
   };
 
   const handleSaveSmsSettings = async () => {
@@ -467,7 +503,9 @@ export const SuperAdminPanel: React.FC = () => {
                                 {isMainAdmin ? 'Hovedadmin' : 'Terapeut'}
                               </span>
                             </div>
-                            <span className="text-[11px] text-slate-400 block">{therapist.email}</span>
+                            {therapist.username && (
+                              <span className="text-[11px] text-slate-400 font-mono block">@{therapist.username}</span>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -1281,21 +1319,30 @@ export const SuperAdminPanel: React.FC = () => {
 
 
 
-      {/* Modal: Ny admin */}
+      {/* Modal: Ny ansatt / terapeut */}
       {isNewAdminOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-5 max-w-sm w-full space-y-4 border border-slate-200 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl sm:rounded-3xl p-5 sm:p-7 max-w-lg w-full space-y-4 border border-slate-200 shadow-2xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900">Opprett administrator</h3>
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                  <UserCheck className="w-4.5 h-4.5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Opprett ny ansatt / terapeut</h3>
+                  <p className="text-xs text-slate-500">Opprett profil med innlogging og tilganger</p>
+                </div>
+              </div>
               <button
                 type="button"
-                onClick={() => { setIsNewAdminOpen(false); setNewAdminName(''); setNewAdminUsername(''); setNewAdminEmail(''); }}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                onClick={() => { setIsNewAdminOpen(false); resetNewAdminForm(); }}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleCreateAdmin} className="space-y-3 text-xs">
+
+            <form onSubmit={handleCreateAdmin} className="space-y-3.5 text-xs">
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Fullt navn *</label>
                 <input
@@ -1303,44 +1350,173 @@ export const SuperAdminPanel: React.FC = () => {
                   required
                   value={newAdminName}
                   onChange={(e) => setNewAdminName(e.target.value)}
-                  placeholder="Jonas Berg"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  placeholder="f.eks. Dr. Jonas Berg"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500 text-xs bg-white"
                 />
               </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Brukernavn</label>
+                  <input
+                    type="text"
+                    value={newAdminUsername}
+                    onChange={(e) => setNewAdminUsername(e.target.value)}
+                    placeholder="f.eks. jonas"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500 text-xs bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Passord</label>
+                  <div className="relative flex items-center">
+                    <input
+                      type={showNewAdminPassword ? 'text' : 'password'}
+                      value={newAdminPassword}
+                      onChange={(e) => setNewAdminPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full px-3 py-2 pr-9 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500 text-xs bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewAdminPassword(!showNewAdminPassword)}
+                      className="absolute right-2.5 p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      title={showNewAdminPassword ? 'Skjul passord' : 'Vis passord'}
+                    >
+                      {showNewAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">E-post *</label>
+                  <input
+                    type="email"
+                    required
+                    value={newAdminEmail}
+                    onChange={(e) => setNewAdminEmail(e.target.value)}
+                    placeholder="jonas@klinikk.no"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500 text-xs bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Telefon</label>
+                  <input
+                    type="tel"
+                    value={newAdminPhone}
+                    onChange={(e) => setNewAdminPhone(e.target.value)}
+                    placeholder="f.eks. 98822000"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500 text-xs bg-white"
+                  />
+                </div>
+              </div>
+
+              {/* Rolle */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Brukernavn</label>
-                <input
-                  type="text"
-                  value={newAdminUsername}
-                  onChange={(e) => setNewAdminUsername(e.target.value)}
-                  placeholder="jonas"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500"
-                />
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Rolle</label>
+                <select
+                  value={newAdminRole}
+                  onChange={(e) => setNewAdminRole(e.target.value as 'admin' | 'hovedadmin')}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500 text-xs bg-white font-medium"
+                >
+                  <option value="admin">Terapeut / Administrator</option>
+                  {currentUser?.role === 'hovedadmin' && (
+                    <option value="hovedadmin">Hovedadministrator (Full klinikk-tilgang)</option>
+                  )}
+                </select>
               </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">E-post *</label>
-                <input
-                  type="email"
-                  required
-                  value={newAdminEmail}
-                  onChange={(e) => setNewAdminEmail(e.target.value)}
-                  placeholder="jonas@klinikk.no"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500"
-                />
+
+              {/* Status bryter */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-slate-800">Aktiv behandler</p>
+                  <p className="text-[11px] text-slate-500">Aktive behandlere er synlige i kalender og timebestilling.</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newAdminIsActive}
+                    onChange={(e) => setNewAdminIsActive(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
               </div>
-              <div className="flex gap-2 pt-2">
+
+              {/* Rettighetsstyring */}
+              {newAdminRole === 'admin' && (
+                <div className="space-y-2 pt-1 border-t border-slate-100">
+                  <p className="text-xs font-bold text-slate-700 uppercase">Innsynsrettigheter & Tilgang</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <label className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newAdminPerms.canViewClientName}
+                        onChange={(e) => setNewAdminPerms({ ...newAdminPerms, canViewClientName: e.target.checked })}
+                        className="rounded text-indigo-600"
+                      />
+                      <span className="font-semibold text-slate-800">Innsyn klientnavn</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newAdminPerms.canViewClientPhone}
+                        onChange={(e) => setNewAdminPerms({ ...newAdminPerms, canViewClientPhone: e.target.checked })}
+                        className="rounded text-indigo-600"
+                      />
+                      <span className="font-semibold text-slate-800">Innsyn telefon</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newAdminPerms.canViewClientEmail}
+                        onChange={(e) => setNewAdminPerms({ ...newAdminPerms, canViewClientEmail: e.target.checked })}
+                        className="rounded text-indigo-600"
+                      />
+                      <span className="font-semibold text-slate-800">Innsyn e-post</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newAdminPerms.canEditJournals}
+                        onChange={(e) => setNewAdminPerms({ ...newAdminPerms, canEditJournals: e.target.checked })}
+                        className="rounded text-indigo-600"
+                      />
+                      <span className="font-semibold text-slate-800">Skrive i journal</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newAdminPerms.canManageAppointments}
+                        onChange={(e) => setNewAdminPerms({ ...newAdminPerms, canManageAppointments: e.target.checked })}
+                        className="rounded text-indigo-600"
+                      />
+                      <span className="font-semibold text-slate-800">Administrere avtaler</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => { setIsNewAdminOpen(false); setNewAdminName(''); setNewAdminUsername(''); setNewAdminEmail(''); }}
-                  className="w-1/2 py-2 rounded-xl border border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 cursor-pointer"
+                  onClick={() => { setIsNewAdminOpen(false); resetNewAdminForm(); }}
+                  className="w-1/2 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 cursor-pointer"
                 >
                   Avbryt
                 </button>
                 <button
                   type="submit"
-                  className="w-1/2 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold cursor-pointer"
+                  className="w-1/2 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold cursor-pointer shadow-xs"
                 >
-                  Opprett
+                  Opprett ansatt
                 </button>
               </div>
             </form>
@@ -1462,6 +1638,40 @@ export const SuperAdminPanel: React.FC = () => {
                   onChange={(e) => setEditTherapistName(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
                 />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Brukernavn</label>
+                  <input
+                    type="text"
+                    value={editTherapistUsername}
+                    onChange={(e) => setEditTherapistUsername(e.target.value)}
+                    placeholder="f.eks. kari"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Passord</label>
+                  <div className="relative flex items-center">
+                    <input
+                      type={showEditTherapistPassword ? 'text' : 'password'}
+                      value={editTherapistPassword}
+                      onChange={(e) => setEditTherapistPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full px-3 py-2 pr-9 rounded-xl border border-slate-300 text-xs text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowEditTherapistPassword(!showEditTherapistPassword)}
+                      className="absolute right-2.5 p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      title={showEditTherapistPassword ? 'Skjul passord' : 'Vis passord'}
+                    >
+                      {showEditTherapistPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
