@@ -775,31 +775,31 @@ export const BookingView: React.FC<BookingViewProps> = ({
             )}
 
             {/* TIDSPUNKT: STARTTID OG SLUTTID */}
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="flex items-center gap-3 sm:gap-4 w-full">
               
               {/* Starttid */}
-              <div className="min-w-0">
-                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-0.5 truncate">
+              <div className="flex-1 min-w-0">
+                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1 truncate">
                   Starttid
                 </label>
                 <input
                   type="time"
                   value={startTime}
                   onChange={(e) => handleStartTimeChange(e.target.value)}
-                  className="w-full h-9 px-2 text-center rounded-lg border border-slate-300 font-mono text-sm font-extrabold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 box-border"
+                  className="w-full h-10 px-2.5 text-center rounded-xl border border-slate-300 font-mono text-sm font-extrabold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 box-border block"
                 />
               </div>
 
               {/* Sluttid */}
-              <div className="min-w-0">
-                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-0.5 truncate">
+              <div className="flex-1 min-w-0">
+                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1 truncate">
                   Sluttid
                 </label>
                 <input
                   type="time"
                   value={endTime}
                   onChange={(e) => handleEndTimeChange(e.target.value)}
-                  className="w-full h-9 px-2 text-center rounded-lg border border-slate-300 font-mono text-sm font-extrabold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 box-border"
+                  className="w-full h-10 px-2.5 text-center rounded-xl border border-slate-300 font-mono text-sm font-extrabold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 box-border block"
                 />
               </div>
 
