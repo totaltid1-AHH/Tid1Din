@@ -18,7 +18,7 @@ import { Appointment, UserProfile, SmsTemplate } from '../../types';
 import { dbService } from '../../services/db';
 import { smsService } from '../../services/sms';
 import { useAuth } from '../../context/AuthContext';
-import { generateTimeOptions } from '../../utils/calendar';
+import { generateTimeOptions, isValidTimeString } from '../../utils/calendar';
 
 interface AppointmentSmsModalProps {
   isOpen: boolean;
@@ -272,8 +272,8 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
       alert('Ingen avtale er valgt for ombooking.');
       return;
     }
-    if (!newDate || !newStartTime) {
-      alert('Vennligst velg både ny dato og klokkeslett.');
+    if (!newDate || !newStartTime || !isValidTimeString(newStartTime)) {
+      alert('Vennligst velg både ny dato og et gyldig klokkeslett (00:00–23:59).');
       return;
     }
 
@@ -407,8 +407,8 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
   const calculatedNewDelayTime = calculateNewTimeFromDelay(currentApt.startTime, delayMinutes);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm">
-      <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
+      <div className="relative w-full max-w-2xl bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85dvh] sm:max-h-[90vh] pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] sm:pb-0">
         
         {/* Header */}
         <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between gap-3">

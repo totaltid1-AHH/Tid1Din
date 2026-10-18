@@ -313,7 +313,70 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {searchTerm ? `Søk: "${searchTerm}" (${filteredAppointments.length})` : `Kommende timer (${upcomingAppointments.length})`}
         </h3>
 
-        <div className="overflow-x-auto max-w-full -mx-3 px-3 sm:mx-0 sm:px-0">
+        {/* Mobil kortvisning */}
+        <div className="sm:hidden divide-y divide-slate-100">
+          {(searchTerm ? filteredAppointments : upcomingAppointments).length === 0 ? (
+            <p className="text-xs text-slate-400 py-3 text-center">Ingen kommende timer funnet.</p>
+          ) : (
+            (searchTerm ? filteredAppointments : upcomingAppointments).map((apt) => {
+              const displayName = canViewName ? apt.clientName : `Klient #${apt.clientNumber}`;
+              return (
+                <div key={apt.id} className="py-2.5 flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-bold text-slate-900 text-xs truncate">{displayName}</span>
+                      <span className="text-[10px] text-slate-400 font-mono">#{apt.clientNumber}</span>
+                    </div>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold flex-shrink-0 ${
+                      apt.status === 'confirmed' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
+                    }`}>
+                      {apt.status === 'confirmed' ? 'Bekreftet' : apt.status}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-2 text-slate-600">
+                      <span className="font-medium text-slate-800">{apt.date}</span>
+                      <span className="font-mono font-bold text-sky-700">kl. {apt.startTime}</span>
+                      <span>•</span>
+                      {apt.isOnline ? (
+                        <span className="inline-flex items-center gap-0.5 text-indigo-700 text-[11px]">
+                          <Video className="w-3 h-3" /> Online
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-0.5 text-emerald-700 text-[11px]">
+                          <MapPin className="w-3 h-3" /> Fysisk
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {canEditJournals && (
+                        <button
+                          onClick={() => handleOpenJournalForClient(apt.clientId, apt)}
+                          className="px-2 py-1 rounded bg-sky-50 text-sky-700 hover:bg-sky-100 font-semibold text-[11px] transition-colors border border-sky-100"
+                        >
+                          Journal
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleOpenSmsModal(apt, 'reschedule')}
+                        className="px-2 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 font-semibold text-[11px] flex items-center gap-1 transition-colors border border-slate-200"
+                        title="Send SMS eller ombook time"
+                      >
+                        <MessageSquare className="w-3 h-3 text-slate-500" />
+                        Varsle
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Desktop tabell */}
+        <div className="hidden sm:block overflow-x-auto max-w-full">
           <table className="w-full text-left text-xs text-slate-600 min-w-[500px]">
             <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] border-b border-slate-200">
               <tr>

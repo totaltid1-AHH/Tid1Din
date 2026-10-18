@@ -42,7 +42,10 @@ import {
   parseMinutes,
   formatTherapistName,
   isDateInHoliday,
-  isTherapistOnLeave
+  isTherapistOnLeave,
+  isValidTimeString,
+  calculateDurationMinutes,
+  calculateEndTime
 } from '../../utils/calendar';
 import { TimeRangeSelector } from './TimeRangeSelector';
 
@@ -51,27 +54,6 @@ interface BookingViewProps {
   onNavigateToDashboard: () => void;
   initialDate?: string;
 }
-
-// Regner ut ny sluttid basert på starttid og antall timer
-const calculateEndTime = (start: string, hours: number): string => {
-  const [hStr, mStr] = (start || '10:00').split(':');
-  const h = parseInt(hStr, 10);
-  const m = parseInt(mStr, 10);
-  if (isNaN(h) || isNaN(m)) return '11:00';
-  const totalMin = h * 60 + m + Math.round(hours * 60);
-  const newH = Math.floor(totalMin / 60) % 24;
-  const newM = totalMin % 60;
-  return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
-};
-
-// Beregner varighet i minutter mellom to klokkeslett
-const calculateDurationMinutes = (start: string, end: string): number => {
-  const [sh, sm] = (start || '00:00').split(':').map(Number);
-  const [eh, em] = (end || '00:00').split(':').map(Number);
-  const startMin = (sh || 0) * 60 + (sm || 0);
-  const endMin = (eh || 0) * 60 + (em || 0);
-  return endMin > startMin ? endMin - startMin : 0;
-};
 
 // Formaterer varighet til en lesbar norsk tekst
 const formatDurationDisplay = (minutes: number): string => {
@@ -319,6 +301,7 @@ export const BookingView: React.FC<BookingViewProps> = ({
   // Når starttid endres manuelt
   const handleStartTimeChange = (newStart: string) => {
     setStartTime(newStart);
+    if (!isValidTimeString(newStart)) return;
     if (suggestedHours) {
       setEndTime(calculateEndTime(newStart, suggestedHours));
     } else {
@@ -332,6 +315,7 @@ export const BookingView: React.FC<BookingViewProps> = ({
   // Når sluttid endres manuelt (IKKE låst tidspunkt)
   const handleEndTimeChange = (newEnd: string) => {
     setEndTime(newEnd);
+    if (!isValidTimeString(newEnd)) return;
     const dur = calculateDurationMinutes(startTime, newEnd);
     if (dur === 60) {
       setSuggestedHours(1);
@@ -405,8 +389,8 @@ export const BookingView: React.FC<BookingViewProps> = ({
       return;
     }
 
-    if (!startTime || !endTime) {
-      alert('Vennligst oppgi både start- og sluttidspunkt.');
+    if (!startTime || !endTime || !isValidTimeString(startTime) || !isValidTimeString(endTime)) {
+      alert('Vennligst oppgi et gyldig klokkeslett for start og slutt (timer 00–23, minutter 00–59).');
       return;
     }
 
@@ -977,7 +961,14 @@ export const BookingView: React.FC<BookingViewProps> = ({
               </div>
             )}
 
-            {new Date(`${selectedDateStr}T${startTime}`) < new Date() && (
+            {(!isValidTimeString(startTime) || !isValidTimeString(endTime)) && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-xs text-rose-900 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                <span>Ugyldig klokkeslett. Klokkeslett må være mellom 00:00 og 23:59 (minutter kan ikke overstige 59).</span>
+              </div>
+            )}
+
+            {isValidTimeString(startTime) && (new Date(`${selectedDateStr}T${startTime}`) < new Date()) && (
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-900 flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
                 <span>Valgt tidspunkt ({selectedDateStr} kl. {startTime}) er tilbake i tid. Velg et tidspunkt frem i tid.</span>
@@ -990,6 +981,8 @@ export const BookingView: React.FC<BookingViewProps> = ({
                 type="button"
                 disabled={
                   isSubmittingBooking || 
+                  !isValidTimeString(startTime) ||
+                  !isValidTimeString(endTime) ||
                   durationMinutes <= 0 || 
                   Boolean(therapistCollision || clientCollision) ||
                   (new Date(`${selectedDateStr}T${startTime}`) < new Date())

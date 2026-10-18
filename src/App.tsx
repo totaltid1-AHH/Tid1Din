@@ -60,14 +60,14 @@ const AppContent: React.FC = () => {
   const isJournalTab = currentTab === 'journal';
 
   return (
-    <div className={`min-h-screen bg-slate-50 flex flex-col justify-between lg:pl-64 ${isJournalTab ? 'h-screen overflow-hidden' : ''}`}>
+    <div className={`min-h-screen bg-slate-50 flex flex-col justify-between lg:pl-64 ${isJournalTab ? 'h-[100dvh] max-h-[100dvh] overflow-hidden' : ''}`}>
       <TwoFactorModal />
       
       {/* Svart sidefeltmeny (venstre side på desktop, topplinje + skuff på mobil/iPad stående) */}
       <Sidebar currentTab={currentTab} setCurrentTab={handleNavTab} />
 
       {isJournalTab ? (
-        <div className="w-full h-full flex-1 flex flex-col overflow-hidden">
+        <div className="w-full flex-1 flex flex-col overflow-hidden min-h-0">
           {(currentUser.role === 'hovedadmin' || currentUser.role === 'admin') && (
             <JournalView 
               key={`journal_${selectedJournalClientId || 'all'}`}

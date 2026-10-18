@@ -11,8 +11,27 @@ export interface GeneratedSlot {
   breakTitle?: string;
 }
 
+export function isValidTimeString(timeStr?: string): boolean {
+  if (!timeStr) return false;
+  const trimmed = timeStr.trim();
+  // Gyldig klokkeslett er HH:MM eller H:MM der timer er 00-23 og minutter er 00-59
+  const match = trimmed.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+  return !!match;
+}
+
+export function normalizeTimeString(timeStr?: string): string {
+  if (!timeStr || !isValidTimeString(timeStr)) return '';
+  const [hh, mm] = timeStr.trim().split(':');
+  return `${hh.padStart(2, '0')}:${mm}`;
+}
+
 export function parseMinutes(timeStr: string): number {
-  const [h, m] = timeStr.split(':').map(Number);
+  if (!timeStr) return 0;
+  const parts = timeStr.trim().split(':');
+  if (parts.length < 2) return 0;
+  const h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  if (isNaN(h) || isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) return 0;
   return h * 60 + m;
 }
 
@@ -23,8 +42,152 @@ export function formatMinutes(totalMinutes: number): string {
 }
 
 /**
+ * Beregner varighet i minutter mellom to klokkeslett.
+ * Hvis ett av klokkeslettene er ugyldig (f.eks. minutter > 59), returneres 0.
+ */
+export function calculateDurationMinutes(start: string, end: string): number {
+  if (!isValidTimeString(start) || !isValidTimeString(end)) return 0;
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  const startMin = sh * 60 + sm;
+  const endMin = eh * 60 + em;
+  return endMin > startMin ? endMin - startMin : 0;
+}
+
+/**
+ * Regner ut ny sluttid basert på starttid og antall timer.
+ */
+export function calculateEndTime(start: string, hours: number): string {
+  if (!isValidTimeString(start)) return '10:45';
+  const [hStr, mStr] = start.split(':');
+  const h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  if (isNaN(h) || isNaN(m)) return '10:45';
+  const totalMin = h * 60 + m + Math.round(hours * 60);
+  const newH = Math.floor(totalMin / 60) % 24;
+  const newM = totalMin % 60;
+  return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+}
+
+/**
+ * Renser og sikrer inntasting av klokkeslett i sanntid.
+ * Forhindrer umulige klokkeslett:
+ * - Timer kan ikke overstige 23.
+ * - Minutter kan aldri overstige 59 (første siffer i minutter kan aldri være 6, 7, 8 eller 9).
+ * - Blokkerer feilaktige verdier som feks "76 minutter" eller "10:76".
+ */
+export function sanitizeTimeInput(nextVal: string, prevVal: string = ''): string {
+  const cleaned = nextVal.replace(/[^0-9:]/g, '');
+
+  // Dersom brukeren sletter tegn, tillat det direkte
+  if (cleaned.length < prevVal.length) {
+    return cleaned;
+  }
+
+  if (!cleaned) return '';
+
+  // Håndter tilfelle der brukeren taster kolon eksplisitt
+  if (cleaned.endsWith(':')) {
+    const hPart = cleaned.replace(/\D/g, '');
+    if (hPart.length > 0) {
+      const h = parseInt(hPart, 10);
+      if (h <= 23) {
+        return `${String(h).padStart(2, '0')}:`;
+      }
+    }
+    return prevVal;
+  }
+
+  const digits = cleaned.replace(/\D/g, '');
+
+  // 1 siffer
+  if (digits.length === 1) {
+    const d = parseInt(digits, 10);
+    // Klokketimer kan kun være 00-23. Siffer 3-9 som første tegn må derfor være enkelttime (03:-09:).
+    if (d >= 3) {
+      return `0${d}:`;
+    }
+    return digits;
+  }
+
+  // 2 siffer (HH)
+  if (digits.length === 2) {
+    const h = parseInt(digits, 10);
+    // Timer kan ikke overstige 23
+    if (h > 23) {
+      return prevVal;
+    }
+    return `${digits}:`;
+  }
+
+  // 3 siffer (HH + første siffer i minutter)
+  if (digits.length === 3) {
+    const hh = digits.slice(0, 2);
+    const h = parseInt(hh, 10);
+    if (h > 23) return prevVal;
+
+    const m1 = parseInt(digits[2], 10);
+    // Minutter kan kun gå fra 00 til 59. Første minuttsiffer kan derfor aldri være 6, 7, 8 eller 9!
+    // (Hindrer tastefeil som feks "10:76" eller "76 minutter")
+    if (m1 > 5) {
+      return prevVal || `${hh}:`;
+    }
+    return `${hh}:${digits[2]}`;
+  }
+
+  // 4 siffer (HH + MM)
+  if (digits.length >= 4) {
+    const hh = digits.slice(0, 2);
+    const mm = digits.slice(2, 4);
+    const h = parseInt(hh, 10);
+    const m = parseInt(mm, 10);
+
+    // Både time (0-23) og minutt (0-59) må være gyldige
+    if (h > 23 || m > 59) {
+      return prevVal;
+    }
+    return `${hh}:${mm}`;
+  }
+
+  return cleaned.slice(0, 5);
+}
+
+/**
+ * Formaterer og ferdigstiller klokkeslett ved fokus-tap (onBlur).
+ * Fyller automatisk ut ufullstendige inntastinger dersom mulig, eller faller tilbake til forrige gyldige verdi.
+ */
+export function formatTimeOnBlur(input: string, fallback: string): string {
+  if (!input || !input.trim()) return fallback;
+  const trimmed = input.trim();
+
+  if (isValidTimeString(trimmed)) {
+    return normalizeTimeString(trimmed);
+  }
+
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length === 1) {
+    const d = parseInt(digits, 10);
+    if (d <= 23) return `0${d}:00`;
+  } else if (digits.length === 2) {
+    const h = parseInt(digits, 10);
+    if (h <= 23) return `${digits.padStart(2, '0')}:00`;
+  } else if (digits.length === 3) {
+    const hh = digits.slice(0, 2);
+    const m1 = digits[2];
+    const h = parseInt(hh, 10);
+    const m = parseInt(m1, 10);
+    if (h <= 23 && m <= 5) {
+      return `${hh}:${m1}0`;
+    }
+  }
+
+  return fallback;
+}
+
+/**
  * Genererer liste over standard klokkeslett (hvert 15. minutt fra 06:00 til 22:00)
- * og inkluderer eventuelle egendefinerte klokkeslett så de aldri mangler i listen.
+ * og inkluderer eventuelle gyldige egendefinerte klokkeslett så de aldri mangler i listen.
+ * Ugyldige klokkeslett (som feks 76 minutter) filtreres automatisk bort.
  */
 export function generateTimeOptions(customValues?: (string | undefined)[]): string[] {
   const options: string[] = [];
@@ -36,9 +199,8 @@ export function generateTimeOptions(customValues?: (string | undefined)[]): stri
   }
   if (customValues) {
     for (const val of customValues) {
-      if (val && /^\d{1,2}:\d{2}$/.test(val)) {
-        const [hh, mm] = val.split(':');
-        const formatted = `${hh.padStart(2, '0')}:${mm}`;
+      if (val && isValidTimeString(val)) {
+        const formatted = normalizeTimeString(val);
         if (!options.includes(formatted)) {
           options.push(formatted);
         }

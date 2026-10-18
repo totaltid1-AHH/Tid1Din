@@ -55,7 +55,10 @@ import {
   parseMinutes,
   formatTherapistName,
   isDateInHoliday,
-  isTherapistOnLeave
+  isTherapistOnLeave,
+  isValidTimeString,
+  calculateDurationMinutes,
+  calculateEndTime
 } from '../../utils/calendar';
 import { TimeRangeSelector } from './TimeRangeSelector';
 
@@ -418,25 +421,6 @@ export const CalendarView: React.FC = () => {
     }
   };
 
-  const calculateEndTime = (start: string, hours: number): string => {
-    const [hStr, mStr] = (start || '10:00').split(':');
-    const h = parseInt(hStr, 10);
-    const m = parseInt(mStr, 10);
-    if (isNaN(h) || isNaN(m)) return '10:45';
-    const totalMin = h * 60 + m + Math.round(hours * 60);
-    const newH = Math.floor(totalMin / 60) % 24;
-    const newM = totalMin % 60;
-    return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
-  };
-
-  const calculateDurationMinutes = (start: string, end: string): number => {
-    const [sh, sm] = (start || '00:00').split(':').map(Number);
-    const [eh, em] = (end || '00:00').split(':').map(Number);
-    const startMin = (sh || 0) * 60 + (sm || 0);
-    const endMin = (eh || 0) * 60 + (em || 0);
-    return endMin > startMin ? endMin - startMin : 0;
-  };
-
   const applyDurationSuggestion = (slotType: 'single' | 'double' | 'triple') => {
     setBookingSuggestedType(slotType);
     const clinicDur = workingHours?.slotDurationMinutes || 45;
@@ -458,6 +442,7 @@ export const CalendarView: React.FC = () => {
 
   const handleBookingStartTimeChange = (newStart: string) => {
     setBookingStartTime(newStart);
+    if (!isValidTimeString(newStart)) return;
     const curDur = calculateDurationMinutes(bookingStartTime, bookingEndTime);
     if (curDur > 0) {
       setBookingEndTime(calculateEndTime(newStart, curDur / 60));
@@ -469,6 +454,7 @@ export const CalendarView: React.FC = () => {
 
   const handleBookingEndTimeChange = (newEnd: string) => {
     setBookingEndTime(newEnd);
+    if (!isValidTimeString(newEnd)) return;
     const dur = calculateDurationMinutes(bookingStartTime, newEnd);
     const clinicDur = workingHours?.slotDurationMinutes || 45;
 
@@ -495,6 +481,12 @@ export const CalendarView: React.FC = () => {
 
   const handleConfirmBooking = async () => {
     if (!currentUser) return;
+
+    if (!isValidTimeString(bookingStartTime) || !isValidTimeString(bookingEndTime)) {
+      alert('Vennligst oppgi et gyldig klokkeslett (timer 00–23, minutter 00–59).');
+      return;
+    }
+
     const dur = calculateDurationMinutes(bookingStartTime, bookingEndTime);
     if (dur <= 0) {
       alert('Sluttidspunkt må være etter starttidspunkt.');
@@ -1067,11 +1059,11 @@ export const CalendarView: React.FC = () => {
 
       {/* POPUP-VINDU (MODAL): DAGENS AVTALER OG BESTILLING AV TIME */}
       {isDaySlotsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="relative w-full max-w-lg bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 p-4 sm:p-6 max-h-[92vh] flex flex-col">
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="relative w-full max-w-lg bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 max-h-[85dvh] sm:max-h-[90vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
-            <div className="flex items-start justify-between pb-2.5 border-b border-slate-100">
+            <div className="p-3 sm:p-4 border-b border-slate-100 flex items-start justify-between flex-shrink-0 bg-white">
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   {isTherapistOnLeave(selectedTherapist, selectedDateStr) ? (
@@ -1121,7 +1113,7 @@ export const CalendarView: React.FC = () => {
             </div>
 
             {/* Modal Body: Avtalte timer og Bestillingsskjema */}
-            <div className="mt-2.5 flex-1 overflow-y-auto space-y-2.5 sm:space-y-3 pr-1 min-h-[160px]">
+            <div className="p-3 sm:p-4 flex-1 overflow-y-auto space-y-2.5">
               
               {/* Avtalte timer for denne dagen */}
               {!isClient && (
@@ -1342,8 +1334,16 @@ export const CalendarView: React.FC = () => {
                     durationMinutes={calculateDurationMinutes(bookingStartTime, bookingEndTime)}
                   />
 
+                  {/* Varsel dersom klokkeslett er ugyldig */}
+                  {(!isValidTimeString(bookingStartTime) || !isValidTimeString(bookingEndTime)) && (
+                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                      <span>Ugyldig klokkeslett. Klokkeslett må være mellom 00:00 og 23:59 (minutter kan ikke overstige 59).</span>
+                    </div>
+                  )}
+
                   {/* Varsel dersom valgt klokkeslett for i dag er passert */}
-                  {isToday(selectedDate) && (parseMinutes(bookingStartTime) < (new Date().getHours() * 60 + new Date().getMinutes())) && (
+                  {isToday(selectedDate) && isValidTimeString(bookingStartTime) && (parseMinutes(bookingStartTime) < (new Date().getHours() * 60 + new Date().getMinutes())) && (
                     <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
                       <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
                       <span>Valgt starttidspunkt ({bookingStartTime}) er tilbake i tid for i dag. Velg et klokkeslett frem i tid.</span>
@@ -1479,56 +1479,58 @@ export const CalendarView: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Knapper */}
-                  <div className="flex gap-2 pt-1">
-                    <button
-                      type="button"
-                      disabled={isSubmittingBooking}
-                      onClick={() => {
-                        setIsDaySlotsModalOpen(false);
-                        setEditingAppointmentId(null);
-                        setCancellingAptId(null);
-                      }}
-                      className="w-1/3 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
-                    >
-                      Avbryt
-                    </button>
-                    <button
-                      type="button"
-                      disabled={
-                        isSubmittingBooking || 
-                        calculateDurationMinutes(bookingStartTime, bookingEndTime) <= 0 ||
-                        Boolean(therapistCollision || clientCollision) ||
-                        (new Date(`${selectedDateStr}T${bookingStartTime}`) < new Date())
-                      }
-                      onClick={handleConfirmBooking}
-                      className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
-                        editingAppointmentId
-                          ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/20'
-                          : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/20'
-                      }`}
-                    >
-                      {isSubmittingBooking ? (
-                        <>
-                          <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          <span>Lagrer...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Check className="w-4 h-4 flex-shrink-0" />
-                          <span>
-                            {editingAppointmentId 
-                              ? `Lagre endring (kl. ${bookingStartTime} – ${bookingEndTime})` 
-                              : `Bekreft time (kl. ${bookingStartTime} – ${bookingEndTime})`}
-                          </span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-
                 </div>
               )}
 
+            </div>
+
+            {/* Modal Footer - ALLTID fastmontert i bunn */}
+            <div className="p-3 sm:p-4 border-t border-slate-200 bg-white flex-shrink-0 flex items-center gap-2 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] sm:pb-3">
+              <button
+                type="button"
+                disabled={isSubmittingBooking}
+                onClick={() => {
+                  setIsDaySlotsModalOpen(false);
+                  setEditingAppointmentId(null);
+                  setCancellingAptId(null);
+                }}
+                className="w-1/3 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer text-center"
+              >
+                Avbryt
+              </button>
+              <button
+                type="button"
+                disabled={
+                  isSubmittingBooking || 
+                  !isValidTimeString(bookingStartTime) ||
+                  !isValidTimeString(bookingEndTime) ||
+                  calculateDurationMinutes(bookingStartTime, bookingEndTime) <= 0 ||
+                  Boolean(therapistCollision || clientCollision) ||
+                  (new Date(`${selectedDateStr}T${bookingStartTime}`) < new Date())
+                }
+                onClick={handleConfirmBooking}
+                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
+                  editingAppointmentId
+                    ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/20'
+                    : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/20'
+                }`}
+              >
+                {isSubmittingBooking ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Lagrer...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4 flex-shrink-0" />
+                    <span className="truncate">
+                      {editingAppointmentId 
+                        ? `Lagre endring (kl. ${bookingStartTime} – ${bookingEndTime})` 
+                        : `Bekreft time (kl. ${bookingStartTime} – ${bookingEndTime})`}
+                    </span>
+                  </>
+                )}
+              </button>
             </div>
 
           </div>

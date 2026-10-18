@@ -46,7 +46,7 @@ import {
 import { format, addDays } from 'date-fns';
 import { nb } from 'date-fns/locale';
 import { AppointmentSmsModal } from '../appointments/AppointmentSmsModal';
-import { generateTimeOptions } from '../../utils/calendar';
+import { generateTimeOptions, isValidTimeString } from '../../utils/calendar';
 
 interface JournalViewProps {
   initialClientId?: string | null;
@@ -186,6 +186,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
   // Sortering og søk i journal
   const [journalSearchQuery, setJournalSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [mobileTab, setMobileTab] = useState<'notes' | 'sessions'>('notes');
 
   // Synkronisert scrolling & tidslinje
   const [activeSessionKey, setActiveSessionKey] = useState<string | null>(null);
@@ -405,16 +406,19 @@ export const JournalView: React.FC<JournalViewProps> = ({
 
   const handleSelectTimelineSession = (sessionKey: string, apt?: Appointment, entry?: DecryptedEntry) => {
     setActiveSessionKey(sessionKey);
+    setMobileTab('notes');
 
     if (entry) {
-      const targetEl = noteRefs.current.get(sessionKey);
-      if (targetEl && journalScrollContainerRef.current) {
-        isProgrammaticScrollRef.current = true;
-        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        setTimeout(() => {
-          isProgrammaticScrollRef.current = false;
-        }, 600);
-      }
+      setTimeout(() => {
+        const targetEl = noteRefs.current.get(sessionKey);
+        if (targetEl && journalScrollContainerRef.current) {
+          isProgrammaticScrollRef.current = true;
+          targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          setTimeout(() => {
+            isProgrammaticScrollRef.current = false;
+          }, 600);
+        }
+      }, 50);
     } else if (apt) {
       handleStartNewForAppointment(apt);
     }
@@ -422,6 +426,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
 
   const handleStartNew = () => {
     if (!selectedClient) return;
+    setMobileTab('notes');
     setEditingEntryId(null);
     setNoteContent('');
     setChangeNote('');
@@ -679,6 +684,11 @@ export const JournalView: React.FC<JournalViewProps> = ({
     e.preventDefault();
     if (!selectedClient || !currentUser) return;
 
+    if (!isValidTimeString(newAptTime)) {
+      alert('Vennligst oppgi et gyldig klokkeslett (00:00–23:59).');
+      return;
+    }
+
     const nowObj = new Date();
     const targetDate = new Date(`${newAptDate}T${newAptTime}`);
     if (targetDate < nowObj) {
@@ -923,22 +933,22 @@ export const JournalView: React.FC<JournalViewProps> = ({
     <div className="w-full h-full flex flex-col bg-slate-100 overflow-hidden select-text text-slate-800">
       
       {/* 1. TOPPBAR: Navn på klienten øverst, kontaktinfo, klientvelger, PDF-eksport og handlinger */}
-      <header className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex-shrink-0 z-20 shadow-2xs">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+      <header className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2.5 sm:py-3 flex-shrink-0 z-20 shadow-2xs">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 sm:gap-3">
           
           {/* Klientens navn og nøkkelinfo */}
-          <div className="flex items-center gap-3.5 flex-wrap sm:flex-nowrap">
-            <div className="w-11 h-11 rounded-2xl bg-sky-600 text-white flex items-center justify-center font-bold text-lg shadow-sm flex-shrink-0">
-              <BookOpen className="w-6 h-6" />
+          <div className="flex items-center gap-2.5 sm:gap-3.5 flex-wrap sm:flex-nowrap">
+            <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-sky-600 text-white flex items-center justify-center font-bold text-base sm:text-lg shadow-sm flex-shrink-0">
+              <BookOpen className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
 
             <div className="min-w-0">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight">
                   {clientDisplayName}
                 </h1>
                 {selectedClient && (
-                  <span className="px-2.5 py-0.5 rounded-full bg-sky-100 text-sky-800 font-mono font-bold text-xs border border-sky-200 flex-shrink-0">
+                  <span className="px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 font-mono font-bold text-[11px] sm:text-xs border border-sky-200 flex-shrink-0">
                     #{selectedClient.customerNumber || 1000}
                   </span>
                 )}
@@ -955,69 +965,74 @@ export const JournalView: React.FC<JournalViewProps> = ({
           </div>
 
           {/* Handlingsknapper øverst */}
-          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap self-end lg:self-center">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap w-full lg:w-auto justify-between lg:justify-end">
             
             {/* Klientvelger Dropdown */}
             <div className="relative">
               <button
                 onClick={() => setIsClientDropdownOpen(!isClientDropdownOpen)}
-                className="px-3 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-300 text-xs font-bold text-slate-700 flex items-center gap-2 transition-all cursor-pointer shadow-2xs"
+                className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-300 text-xs font-bold text-slate-700 flex items-center gap-1.5 sm:gap-2 transition-all cursor-pointer shadow-2xs"
               >
                 <User className="w-3.5 h-3.5 text-sky-600" />
-                <span className="max-w-[130px] truncate">Bytt klient</span>
+                <span className="max-w-[85px] sm:max-w-[130px] truncate">Bytt klient</span>
                 <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
               </button>
 
               {isClientDropdownOpen && (
-                <div className="absolute right-0 top-full mt-1.5 w-72 bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 z-50 animate-in fade-in duration-100">
-                  <div className="p-1.5 mb-1 border-b border-slate-100">
-                    <div className="relative">
-                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
-                      <input
-                        type="text"
-                        value={clientSearchTerm}
-                        onChange={(e) => setClientSearchTerm(e.target.value)}
-                        placeholder="Søk navn eller kundenr..."
-                        className="w-full pl-8 pr-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none focus:border-sky-500"
-                        autoFocus
-                      />
+                <>
+                  <div
+                    className="fixed inset-0 z-40 bg-slate-900/30 sm:bg-transparent"
+                    onClick={() => setIsClientDropdownOpen(false)}
+                  />
+                  <div className="fixed inset-x-3 top-28 sm:top-full sm:mt-1.5 sm:absolute sm:inset-auto sm:right-0 w-auto sm:w-72 bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 z-50 animate-in fade-in duration-100">
+                    <div className="p-1.5 mb-1 border-b border-slate-100">
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+                        <input
+                          type="text"
+                          value={clientSearchTerm}
+                          onChange={(e) => setClientSearchTerm(e.target.value)}
+                          placeholder="Søk navn eller kundenr..."
+                          className="w-full pl-8 pr-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none focus:border-sky-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="max-h-60 overflow-y-auto space-y-1">
+                      {clients
+                        .filter(c => {
+                          const term = clientSearchTerm.toLowerCase();
+                          return c.displayName.toLowerCase().includes(term) ||
+                            String(c.customerNumber || '').includes(term);
+                        })
+                        .map(client => (
+                          <button
+                            key={client.uid}
+                            onClick={() => {
+                              setSelectedClient(client);
+                              setIsClientDropdownOpen(false);
+                              setClientSearchTerm('');
+                            }}
+                            className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors ${
+                              selectedClient?.uid === client.uid 
+                                ? 'bg-sky-50 text-sky-800 font-bold' 
+                                : 'text-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            <div className="truncate pr-2">
+                              <p className="font-bold text-slate-900 truncate">
+                                {canViewName ? client.displayName : `Klient #${client.customerNumber || 1000}`}
+                              </p>
+                              <p className="text-[10px] text-slate-400 font-mono">#{client.customerNumber || 1000}</p>
+                            </div>
+                            {selectedClient?.uid === client.uid && (
+                              <CheckCircle2 className="w-4 h-4 text-sky-600 flex-shrink-0" />
+                            )}
+                          </button>
+                        ))}
                     </div>
                   </div>
-
-                  <div className="max-h-60 overflow-y-auto space-y-1">
-                    {clients
-                      .filter(c => {
-                        const term = clientSearchTerm.toLowerCase();
-                        return c.displayName.toLowerCase().includes(term) ||
-                          String(c.customerNumber || '').includes(term);
-                      })
-                      .map(client => (
-                        <button
-                          key={client.uid}
-                          onClick={() => {
-                            setSelectedClient(client);
-                            setIsClientDropdownOpen(false);
-                            setClientSearchTerm('');
-                          }}
-                          className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors ${
-                            selectedClient?.uid === client.uid 
-                              ? 'bg-sky-50 text-sky-800 font-bold' 
-                              : 'text-slate-700 hover:bg-slate-50'
-                          }`}
-                        >
-                          <div className="truncate pr-2">
-                            <p className="font-bold text-slate-900 truncate">
-                              {canViewName ? client.displayName : `Klient #${client.customerNumber || 1000}`}
-                            </p>
-                            <p className="text-[10px] text-slate-400 font-mono">#{client.customerNumber || 1000}</p>
-                          </div>
-                          {selectedClient?.uid === client.uid && (
-                            <CheckCircle2 className="w-4 h-4 text-sky-600 flex-shrink-0" />
-                          )}
-                        </button>
-                      ))}
-                  </div>
-                </div>
+                </>
               )}
             </div>
 
@@ -1030,7 +1045,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
                   setNewAptEndTime('12:45');
                   setIsNewAppointmentModalOpen(true);
                 }}
-                className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
                 title="Avtal ny samtaletime (vises direkte i kalenderen)"
               >
                 <CalendarPlus className="w-3.5 h-3.5 text-sky-400" />
@@ -1043,7 +1058,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
               <button
                 onClick={handleStartNew}
                 disabled={!selectedClient}
-                className="px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Plus className="w-4 h-4" />
                 <span>Nytt notat</span>
@@ -1053,7 +1068,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
             {/* Fokusmodus-knapp (Forslag 4) */}
             <button
               onClick={() => setIsFocusMode(!isFocusMode)}
-              className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+              className={`p-1.5 sm:p-2 rounded-xl border transition-colors cursor-pointer ${
                 isFocusMode
                   ? 'bg-sky-50 text-sky-700 border-sky-300 font-bold'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-slate-200'
@@ -1066,7 +1081,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
             {/* PDF Eksport (Forslag 5) */}
             <button
               onClick={handleExportPdf}
-              className="p-2 rounded-xl text-slate-600 hover:text-sky-700 hover:bg-sky-50 border border-slate-200 transition-colors cursor-pointer"
+              className="p-1.5 sm:p-2 rounded-xl text-slate-600 hover:text-sky-700 hover:bg-sky-50 border border-slate-200 transition-colors cursor-pointer"
               title="Last ned journal som PDF"
             >
               <Download className="w-4 h-4 text-sky-600" />
@@ -1075,7 +1090,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
             {/* Utskrift */}
             <button
               onClick={handlePrint}
-              className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer"
+              className="p-1.5 sm:p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer hidden sm:flex"
               title="Skriv ut journal"
             >
               <Printer className="w-4 h-4 text-slate-600" />
@@ -1084,7 +1099,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
             {/* SMS Varsel */}
             <button
               onClick={() => setIsSmsModalOpen(true)}
-              className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer"
+              className="p-1.5 sm:p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer"
               title="Send SMS til klienten"
             >
               <MessageSquare className="w-4 h-4 text-amber-600" />
@@ -1107,12 +1122,40 @@ export const JournalView: React.FC<JournalViewProps> = ({
         )}
       </header>
 
+      {/* Mobil fanebytte mellom Notater og Samtaletimer */}
+      <div className="md:hidden flex border-b border-slate-200 bg-white px-3 py-1.5 gap-2 flex-shrink-0">
+        <button
+          onClick={() => setMobileTab('notes')}
+          className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5 ${
+            mobileTab === 'notes'
+              ? 'bg-sky-600 text-white shadow-2xs'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+          }`}
+        >
+          <BookOpen className="w-3.5 h-3.5" />
+          <span>Journal ({filteredAndSortedEntries.length})</span>
+        </button>
+        <button
+          onClick={() => setMobileTab('sessions')}
+          className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5 ${
+            mobileTab === 'sessions'
+              ? 'bg-sky-600 text-white shadow-2xs'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+          }`}
+        >
+          <CalendarDays className="w-3.5 h-3.5" />
+          <span>Samtaletimer ({timelineSessions.length})</span>
+        </button>
+      </div>
+
       {/* 2. HOVEDAREALET: 1/4 venstre (Samtaletimer) + 3/4 høyre (Scrollbar journal) */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden w-full">
         
         {/* ===================== VENSTRE KOLONNE (1/4): SAMTALETIMER & TIDSLINJE (Skjules i fokusmodus) ===================== */}
         {!isFocusMode && (
-          <aside className="w-full md:w-80 lg:w-96 md:min-w-[280px] bg-white border-r border-slate-200 flex flex-col justify-between flex-shrink-0 z-10 transition-all">
+          <aside className={`w-full md:w-80 lg:w-96 md:min-w-[280px] bg-white border-r border-slate-200 flex flex-col justify-between flex-shrink-0 z-10 transition-all ${
+            mobileTab === 'sessions' ? 'flex flex-1 min-h-0' : 'hidden md:flex'
+          }`}>
             
             {/* Toppen av venstre kolonne */}
             <div className="p-3.5 sm:p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
@@ -1249,7 +1292,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
             </div>
 
             {onNavigateToCalendar && (
-              <div className="p-3 border-t border-slate-200 bg-slate-50/50">
+              <div className="p-3 border-t border-slate-200 bg-slate-50/50 pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:pb-3">
                 <button
                   onClick={() => onNavigateToCalendar()}
                   className="w-full py-2 px-3 rounded-xl border border-slate-300 hover:border-slate-400 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
@@ -1265,7 +1308,9 @@ export const JournalView: React.FC<JournalViewProps> = ({
         {/* ===================== HØYRE KOLONNE (3/4 ELLER 100% I FOKUSMODUS): JOURNALFLATE ===================== */}
         <main 
           ref={journalScrollContainerRef}
-          className={`flex-1 overflow-y-auto bg-slate-50/40 p-4 sm:p-6 lg:p-8 space-y-6 transition-all ${
+          className={`flex-1 overflow-y-auto bg-slate-50/40 p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:pb-8 transition-all ${
+            mobileTab === 'notes' ? 'block' : 'hidden md:block'
+          } ${
             isFocusMode ? 'max-w-4xl mx-auto w-full' : ''
           }`}
         >
@@ -1318,7 +1363,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
 
           {/* SKRIVEOMRÅDE (COMPOSER): GOD PLASS TIL Å SKRIVE PÅ IPAD / PC */}
           {isComposerOpen && canEdit && (
-            <div className="bg-white rounded-3xl border-2 border-sky-400 p-5 sm:p-7 shadow-lg space-y-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl sm:rounded-3xl border-2 border-sky-400 p-3.5 sm:p-7 shadow-lg space-y-4 animate-in fade-in duration-200">
               
               {/* Topplinje for notatskriving */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
@@ -1757,7 +1802,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
                       if (el) noteRefs.current.set(sessionKey, el);
                       else noteRefs.current.delete(sessionKey);
                     }}
-                    className={`bg-white rounded-3xl border p-5 sm:p-7 shadow-xs hover:shadow-sm transition-all space-y-4 ${
+                    className={`bg-white rounded-2xl sm:rounded-3xl border p-3.5 sm:p-6 shadow-xs hover:shadow-sm transition-all space-y-3.5 ${
                       isSelected 
                         ? 'border-sky-400 ring-2 ring-sky-300/60 shadow-md' 
                         : 'border-slate-200'
@@ -1842,11 +1887,12 @@ export const JournalView: React.FC<JournalViewProps> = ({
       </div>
 
       {/* MODAL: AVTAL NY SAMTALETIME (Starttid + standard 45 min slutt-tid) */}
+      {/* NY SAMTALETIME-MODAL */}
       {isNewAppointmentModalOpen && selectedClient && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="relative w-full max-w-lg bg-white rounded-3xl p-5 sm:p-7 shadow-2xl border border-slate-200 space-y-4">
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="relative w-full max-w-lg bg-white rounded-t-3xl sm:rounded-2xl max-h-[88dvh] sm:max-h-[90vh] flex flex-col p-4 sm:p-6 shadow-2xl border border-slate-200 overflow-hidden">
             
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-shrink-0">
               <div>
                 <h3 className="text-base sm:text-lg font-extrabold text-slate-900 flex items-center gap-2">
                   <CalendarPlus className="w-5 h-5 text-sky-600" />
@@ -1865,116 +1911,118 @@ export const JournalView: React.FC<JournalViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleCreateAppointment} className="space-y-4">
+            <form onSubmit={handleCreateAppointment} className="flex-1 flex flex-col min-h-0 overflow-hidden">
               
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                  Klient
-                </label>
-                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-800 flex items-center justify-between">
-                  <span>{clientDisplayName}</span>
-                  <span className="font-mono text-slate-400">#{selectedClient.customerNumber || 1000}</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                  Dato *
-                </label>
-                <input
-                  type="date"
-                  min={format(new Date(), 'yyyy-MM-dd')}
-                  required
-                  value={newAptDate}
-                  onChange={(e) => setNewAptDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-800 outline-none focus:border-sky-500"
-                />
-              </div>
-
-              {/* Start- og sluttidspunkt (standard 45 minutter) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="flex-1 overflow-y-auto space-y-3.5 py-3 pr-1">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                    Starttidspunkt *
+                    Klient
                   </label>
-                  <select
-                    required
-                    value={newAptTime}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setNewAptTime(val);
-                      // Automatisk slutt-tid satt til +45 minutter som standard
-                      setNewAptEndTime(calculateEndTime(val, 45));
-                    }}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold font-mono text-slate-800 outline-none focus:border-sky-500 bg-white"
-                  >
-                    {generateTimeOptions([newAptTime]).map(t => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
+                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-800 flex items-center justify-between">
+                    <span>{clientDisplayName}</span>
+                    <span className="font-mono text-slate-400">#{selectedClient.customerNumber || 1000}</span>
+                  </div>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                    Sluttidspunkt * (standard 45 min)
+                    Dato *
                   </label>
-                  <select
+                  <input
+                    type="date"
+                    min={format(new Date(), 'yyyy-MM-dd')}
                     required
-                    value={newAptEndTime}
-                    onChange={(e) => setNewAptEndTime(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold font-mono text-slate-800 outline-none focus:border-sky-500 bg-white"
-                  >
-                    {generateTimeOptions([newAptEndTime]).map(t => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
+                    value={newAptDate}
+                    onChange={(e) => setNewAptDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-800 outline-none focus:border-sky-500"
+                  />
+                </div>
+
+                {/* Start- og sluttidspunkt (standard 45 minutter) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                      Starttidspunkt *
+                    </label>
+                    <select
+                      required
+                      value={newAptTime}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setNewAptTime(val);
+                        // Automatisk slutt-tid satt til +45 minutter som standard
+                        setNewAptEndTime(calculateEndTime(val, 45));
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold font-mono text-slate-800 outline-none focus:border-sky-500 bg-white"
+                    >
+                      {generateTimeOptions([newAptTime]).map(t => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                      Sluttidspunkt * (standard 45 min)
+                    </label>
+                    <select
+                      required
+                      value={newAptEndTime}
+                      onChange={(e) => setNewAptEndTime(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold font-mono text-slate-800 outline-none focus:border-sky-500 bg-white"
+                    >
+                      {generateTimeOptions([newAptEndTime]).map(t => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                    Møteform
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewAptIsOnline(false)}
+                      className={`flex-1 py-2 rounded-xl border text-xs font-semibold transition-all ${
+                        !newAptIsOnline
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-800 font-bold'
+                          : 'bg-white border-slate-200 text-slate-600'
+                      }`}
+                    >
+                      Oppmøte i klinikk
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewAptIsOnline(true)}
+                      className={`flex-1 py-2 rounded-xl border text-xs font-semibold transition-all ${
+                        newAptIsOnline
+                          ? 'bg-indigo-50 border-indigo-300 text-indigo-800 font-bold'
+                          : 'bg-white border-slate-200 text-slate-600'
+                      }`}
+                    >
+                      Online videomøte
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                    Valgfritt notat for timen
+                  </label>
+                  <input
+                    type="text"
+                    value={newAptNotes}
+                    onChange={(e) => setNewAptNotes(e.target.value)}
+                    placeholder="f.eks. Oppfølgingssamtale etter forrige uke..."
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs text-slate-800 outline-none focus:border-sky-500"
+                  />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                  Møteform
-                </label>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setNewAptIsOnline(false)}
-                    className={`flex-1 py-2 rounded-xl border text-xs font-semibold transition-all ${
-                      !newAptIsOnline
-                        ? 'bg-emerald-50 border-emerald-300 text-emerald-800 font-bold'
-                        : 'bg-white border-slate-200 text-slate-600'
-                    }`}
-                  >
-                    Oppmøte i klinikk
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNewAptIsOnline(true)}
-                    className={`flex-1 py-2 rounded-xl border text-xs font-semibold transition-all ${
-                      newAptIsOnline
-                        ? 'bg-indigo-50 border-indigo-300 text-indigo-800 font-bold'
-                        : 'bg-white border-slate-200 text-slate-600'
-                    }`}
-                  >
-                    Online videomøte
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                  Valgfritt notat for timen
-                </label>
-                <input
-                  type="text"
-                  value={newAptNotes}
-                  onChange={(e) => setNewAptNotes(e.target.value)}
-                  placeholder="f.eks. Oppfølgingssamtale etter forrige uke..."
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs text-slate-800 outline-none focus:border-sky-500"
-                />
-              </div>
-
-              <div className="flex gap-2.5 pt-2">
+              <div className="flex gap-2.5 pt-3 border-t border-slate-100 flex-shrink-0 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] sm:pb-0">
                 <button
                   type="button"
                   onClick={() => setIsNewAppointmentModalOpen(false)}
@@ -1998,9 +2046,9 @@ export const JournalView: React.FC<JournalViewProps> = ({
 
       {/* REVISJONSSPOR MODAL */}
       {selectedRevisionHistory && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-100">
-          <div className="bg-white rounded-3xl p-6 max-w-lg w-full border border-slate-200 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-100">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl p-4 sm:p-6 max-w-lg w-full border border-slate-200 shadow-2xl space-y-4 max-h-[85dvh] flex flex-col overflow-hidden pb-[calc(1rem+env(safe-area-inset-bottom,0px))] sm:pb-6">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 flex-shrink-0">
               <h4 className="text-base font-bold text-slate-900 flex items-center gap-2">
                 <History className="w-5 h-5 text-indigo-600" />
                 Revisjonsspor & Endringshistorikk
@@ -2013,7 +2061,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
               </button>
             </div>
 
-            <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+            <div className="space-y-3 flex-1 overflow-y-auto pr-1">
               {selectedRevisionHistory.map((rev, idx) => (
                 <div key={rev.id || idx} className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-1.5">
                   <div className="flex justify-between font-semibold text-slate-700">

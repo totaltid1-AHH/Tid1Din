@@ -250,8 +250,8 @@ export const JournalModal: React.FC<JournalModalProps> = ({
   const sortedDateKeys = Array.from(groupedEntriesMap.keys()).sort((a, b) => b.localeCompare(a));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-4xl lg:max-w-5xl bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 p-4 sm:p-7 max-h-[92vh] flex flex-col">
+    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-5 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="relative w-full max-w-4xl lg:max-w-5xl bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 p-4 sm:p-7 max-h-[88dvh] sm:max-h-[92vh] flex flex-col pb-[calc(1rem+env(safe-area-inset-bottom,0px))] sm:pb-7">
         
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-200">
@@ -554,8 +554,8 @@ export const JournalModal: React.FC<JournalModalProps> = ({
 
         {/* Modal for revisjonshistorikk */}
         {selectedRevisionHistory && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
-            <div className="bg-white rounded-2xl p-6 max-w-lg w-full border border-slate-200 shadow-2xl space-y-4">
+          <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-xs">
+            <div className="bg-white rounded-t-3xl sm:rounded-2xl p-4 sm:p-6 max-w-lg w-full border border-slate-200 shadow-2xl space-y-4 max-h-[85dvh] flex flex-col pb-[calc(1rem+env(safe-area-inset-bottom,0px))] sm:pb-6">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <h4 className="text-base font-bold text-slate-900 flex items-center gap-2">
                   <History className="w-5 h-5 text-indigo-600" />
