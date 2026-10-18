@@ -285,6 +285,18 @@ export const CalendarView: React.FC = () => {
     ).sort((a, b) => a.startTime.localeCompare(b.startTime));
 
     let initialStart = '10:00';
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    if (dayStr === todayStr) {
+      const now = new Date();
+      const currentMin = now.getHours() * 60 + now.getMinutes();
+      const roundedMin = Math.ceil((currentMin + 5) / 15) * 15;
+      if (parseMinutes(initialStart) < roundedMin) {
+        const h = Math.floor(roundedMin / 60) % 24;
+        const m = roundedMin % 60;
+        initialStart = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      }
+    }
+
     const initStartMin = parseMinutes(initialStart);
     const initEndMin = initStartMin + durMin;
 
@@ -344,6 +356,12 @@ export const CalendarView: React.FC = () => {
   };
 
   const handleStartEditAppointment = (apt: Appointment) => {
+    const isAptPast = isPast(new Date(`${apt.date}T${apt.endTime}`));
+    if (isAptPast) {
+      alert('Tidligere eller gjennomførte timer kan ikke endres.');
+      return;
+    }
+
     setEditingAppointmentId(apt.id);
     setCancellingAptId(null);
     setSelectedClientId(apt.clientId);
@@ -481,6 +499,29 @@ export const CalendarView: React.FC = () => {
     if (dur <= 0) {
       alert('Sluttidspunkt må være etter starttidspunkt.');
       return;
+    }
+
+    const now = new Date();
+    const targetStartDateTime = new Date(`${selectedDateStr}T${bookingStartTime}`);
+
+    if (editingAppointmentId) {
+      const existingApt = appointments.find(a => a.id === editingAppointmentId);
+      if (existingApt) {
+        const existingEnd = new Date(`${existingApt.date}T${existingApt.endTime}`);
+        if (existingEnd < now) {
+          alert('Tidligere eller gjennomførte timer kan ikke endres.');
+          return;
+        }
+        if (targetStartDateTime < now) {
+          alert('Det er ikke mulig å flytte en avtale tilbake i tid. Vennligst velg et fremtidig tidspunkt.');
+          return;
+        }
+      }
+    } else {
+      if (targetStartDateTime < now) {
+        alert('Det er ikke mulig å opprette avtaler tilbake i tid. Vennligst velg et fremtidig tidspunkt.');
+        return;
+      }
     }
 
     if (therapistCollision) {
@@ -1129,29 +1170,37 @@ export const CalendarView: React.FC = () => {
                                 <span className="font-semibold text-slate-600 font-mono text-[11px] mr-1 hidden sm:inline">
                                   kr {apt.price},-
                                 </span>
-                                <button
-                                  type="button"
-                                  onClick={() => isEditingThis ? handleCancelEditAppointment() : handleStartEditAppointment(apt)}
-                                  className={`px-2 py-1 rounded-lg text-[11px] font-semibold border flex items-center gap-1 transition-colors cursor-pointer ${
-                                    isEditingThis
-                                      ? 'bg-amber-100 text-amber-900 border-amber-300'
-                                      : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
-                                  }`}
-                                  title="Endre avtalen"
-                                >
-                                  <Edit2 className="w-3 h-3 text-sky-600" />
-                                  <span>{isEditingThis ? 'Avbryt' : 'Endre'}</span>
-                                </button>
+                                {isPast(new Date(`${apt.date}T${apt.endTime}`)) ? (
+                                  <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200">
+                                    Gjennomført
+                                  </span>
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => isEditingThis ? handleCancelEditAppointment() : handleStartEditAppointment(apt)}
+                                      className={`px-2 py-1 rounded-lg text-[11px] font-semibold border flex items-center gap-1 transition-colors cursor-pointer ${
+                                        isEditingThis
+                                          ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                          : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                                      }`}
+                                      title="Endre avtalen"
+                                    >
+                                      <Edit2 className="w-3 h-3 text-sky-600" />
+                                      <span>{isEditingThis ? 'Avbryt' : 'Endre'}</span>
+                                    </button>
 
-                                <button
-                                  type="button"
-                                  onClick={() => setCancellingAptId(isCancellingThis ? null : apt.id)}
-                                  className="px-2 py-1 rounded-lg text-[11px] font-semibold border bg-white hover:bg-rose-50 text-rose-700 border-rose-200 flex items-center gap-1 transition-colors cursor-pointer"
-                                  title="Avlys avtale"
-                                >
-                                  <Trash2 className="w-3 h-3 text-rose-600" />
-                                  <span>Avlys</span>
-                                </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setCancellingAptId(isCancellingThis ? null : apt.id)}
+                                      className="px-2 py-1 rounded-lg text-[11px] font-semibold border bg-white hover:bg-rose-50 text-rose-700 border-rose-200 flex items-center gap-1 transition-colors cursor-pointer"
+                                      title="Avlys avtale"
+                                    >
+                                      <Trash2 className="w-3 h-3 text-rose-600" />
+                                      <span>Avlys</span>
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             </div>
 
@@ -1231,233 +1280,254 @@ export const CalendarView: React.FC = () => {
               )}
 
               {/* Bestillingsskjema / Endringsskjema */}
-              <div className="space-y-2.5 pt-0.5">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-sky-600" />
-                    <span>{editingAppointmentId ? 'Endre avtale' : 'Avtal time'}</span>
-                  </h4>
-                  {editingAppointmentId && (
+              {isPast(selectedDate) && !isToday(selectedDate) && !editingAppointmentId ? (
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-1.5 my-2">
+                  <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-1">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                  <p className="text-xs font-bold text-slate-700">Tidligere dato</p>
+                  <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
+                    Det er ikke mulig å opprette avtaler tilbake i tid. Velg en dato i dag eller frem i tid i kalenderen for å avtale time.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2.5 pt-0.5">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-sky-600" />
+                      <span>{editingAppointmentId ? 'Endre avtale' : 'Avtal time'}</span>
+                    </h4>
+                    {editingAppointmentId && (
+                      <button
+                        type="button"
+                        onClick={handleCancelEditAppointment}
+                        className="text-[11px] font-semibold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded border border-amber-200 transition-colors cursor-pointer"
+                      >
+                        Avbryt endring
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Velg klient hvis admin */}
+                  {currentUser?.role !== 'client' && (
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase mb-0.5">
+                        Klient
+                      </label>
+                      <select
+                        value={selectedClientId}
+                        onChange={(e) => setSelectedClientId(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-medium focus:outline-none bg-white"
+                      >
+                        {clients.map(c => {
+                          const name = (currentUser?.role === 'admin' && !currentUser?.permissions?.canViewClientName)
+                            ? `Klient #${c.customerNumber}`
+                            : `${c.displayName} (#${c.customerNumber})`;
+                          return (
+                            <option key={c.uid} value={c.uid}>
+                              {name}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Start- og sluttid (iPad/mobil-sikret uten overlapp) */}
+                  <TimeRangeSelector
+                    startTime={bookingStartTime}
+                    endTime={bookingEndTime}
+                    onStartTimeChange={handleBookingStartTimeChange}
+                    onEndTimeChange={handleBookingEndTimeChange}
+                    durationMinutes={calculateDurationMinutes(bookingStartTime, bookingEndTime)}
+                  />
+
+                  {/* Varsel dersom valgt klokkeslett for i dag er passert */}
+                  {isToday(selectedDate) && (parseMinutes(bookingStartTime) < (new Date().getHours() * 60 + new Date().getMinutes())) && (
+                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                      <span>Valgt starttidspunkt ({bookingStartTime}) er tilbake i tid for i dag. Velg et klokkeslett frem i tid.</span>
+                    </div>
+                  )}
+
+                  {/* Valg av varighet tilpasset Klinikk-oppsettet (uten 'Forslag til sluttid:'-tekst) */}
+                  <div className="grid grid-cols-3 gap-1.5 pt-0.5">
                     <button
                       type="button"
-                      onClick={handleCancelEditAppointment}
-                      className="text-[11px] font-semibold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded border border-amber-200 transition-colors cursor-pointer"
+                      onClick={() => applyDurationSuggestion('single')}
+                      className={`py-1.5 px-2 rounded-lg border text-center transition-all cursor-pointer ${
+                        bookingSuggestedType === 'single'
+                          ? 'border-sky-600 bg-sky-50 text-sky-900 ring-2 ring-sky-500 font-bold shadow-2xs'
+                          : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium'
+                      }`}
                     >
-                      Avbryt endring
+                      <span className="block text-xs font-bold">Enkelttime ({clinicSlotMinutes}m)</span>
+                      <span className="block text-[10px] text-sky-700 font-semibold mt-0.5">kr {workingHours?.prices?.single ?? 950},-</span>
                     </button>
-                  )}
-                </div>
 
-                {/* Velg klient hvis admin */}
-                {currentUser?.role !== 'client' && (
+                    <button
+                      type="button"
+                      onClick={() => applyDurationSuggestion('double')}
+                      className={`py-1.5 px-2 rounded-lg border text-center transition-all cursor-pointer ${
+                        bookingSuggestedType === 'double'
+                          ? 'border-sky-600 bg-sky-50 text-sky-900 ring-2 ring-sky-500 font-bold shadow-2xs'
+                          : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium'
+                      }`}
+                    >
+                      <span className="block text-xs font-bold">Dobbelttime ({clinicSlotMinutes * 2}m)</span>
+                      <span className="block text-[10px] text-sky-700 font-semibold mt-0.5">kr {workingHours?.prices?.double ?? 1800},-</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => applyDurationSuggestion('triple')}
+                      className={`py-1.5 px-2 rounded-lg border text-center transition-all cursor-pointer ${
+                        bookingSuggestedType === 'triple'
+                          ? 'border-sky-600 bg-sky-50 text-sky-900 ring-2 ring-sky-500 font-bold shadow-2xs'
+                          : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium'
+                      }`}
+                    >
+                      <span className="block text-xs font-bold">Trippeltime ({clinicSlotMinutes * 3}m)</span>
+                      <span className="block text-[10px] text-sky-700 font-semibold mt-0.5">kr {workingHours?.prices?.triple ?? 2600},-</span>
+                    </button>
+                  </div>
+
+                  {/* Varighet og pris */}
+                  <div className="py-1.5 px-2.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                    <div>
+                      <span className="text-slate-400 font-semibold block text-[10px] uppercase">Varighet</span>
+                      <span className="font-bold text-slate-900 font-mono">
+                        {calculateDurationMinutes(bookingStartTime, bookingEndTime)} minutter
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-slate-400 font-semibold block text-[10px] uppercase">Pris</span>
+                      <span className="font-extrabold text-emerald-700 text-sm">
+                        kr {bookingPrice},-
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Møteform */}
                   <div>
                     <label className="block text-[11px] font-bold text-slate-700 uppercase mb-0.5">
-                      Klient
+                      Møteform
                     </label>
-                    <select
-                      value={selectedClientId}
-                      onChange={(e) => setSelectedClientId(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-medium focus:outline-none bg-white"
-                    >
-                      {clients.map(c => {
-                        const name = (currentUser?.role === 'admin' && !currentUser?.permissions?.canViewClientName)
-                          ? `Klient #${c.customerNumber}`
-                          : `${c.displayName} (#${c.customerNumber})`;
-                        return (
-                          <option key={c.uid} value={c.uid}>
-                            {name}
-                          </option>
-                        );
-                      })}
-                    </select>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsOnlineMeeting(false)}
+                        className={`py-1.5 px-2 rounded-lg border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                          !isOnlineMeeting ? 'border-sky-600 bg-sky-50 text-sky-900 font-bold' : 'border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        <MapPin className="w-3.5 h-3.5 text-sky-600" />
+                        <span className="text-xs">Fysisk møte</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsOnlineMeeting(true)}
+                        className={`py-1.5 px-2 rounded-lg border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                          isOnlineMeeting ? 'border-sky-600 bg-sky-50 text-sky-900 font-bold' : 'border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        <Video className="w-3.5 h-3.5 text-sky-600" />
+                        <span className="text-xs">Online møte</span>
+                      </button>
+                    </div>
                   </div>
-                )}
 
-                {/* Start- og sluttid (iPad/mobil-sikret uten overlapp) */}
-                <TimeRangeSelector
-                  startTime={bookingStartTime}
-                  endTime={bookingEndTime}
-                  onStartTimeChange={handleBookingStartTimeChange}
-                  onEndTimeChange={handleBookingEndTimeChange}
-                  durationMinutes={calculateDurationMinutes(bookingStartTime, bookingEndTime)}
-                />
-
-                {/* Valg av varighet tilpasset Klinikk-oppsettet (uten 'Forslag til sluttid:'-tekst) */}
-                <div className="grid grid-cols-3 gap-1.5 pt-0.5">
-                  <button
-                    type="button"
-                    onClick={() => applyDurationSuggestion('single')}
-                    className={`py-1.5 px-2 rounded-lg border text-center transition-all cursor-pointer ${
-                      bookingSuggestedType === 'single'
-                        ? 'border-sky-600 bg-sky-50 text-sky-900 ring-2 ring-sky-500 font-bold shadow-2xs'
-                        : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium'
-                    }`}
-                  >
-                    <span className="block text-xs font-bold">Enkelttime ({clinicSlotMinutes}m)</span>
-                    <span className="block text-[10px] text-sky-700 font-semibold mt-0.5">kr {workingHours?.prices?.single ?? 950},-</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => applyDurationSuggestion('double')}
-                    className={`py-1.5 px-2 rounded-lg border text-center transition-all cursor-pointer ${
-                      bookingSuggestedType === 'double'
-                        ? 'border-sky-600 bg-sky-50 text-sky-900 ring-2 ring-sky-500 font-bold shadow-2xs'
-                        : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium'
-                    }`}
-                  >
-                    <span className="block text-xs font-bold">Dobbelttime ({clinicSlotMinutes * 2}m)</span>
-                    <span className="block text-[10px] text-sky-700 font-semibold mt-0.5">kr {workingHours?.prices?.double ?? 1800},-</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => applyDurationSuggestion('triple')}
-                    className={`py-1.5 px-2 rounded-lg border text-center transition-all cursor-pointer ${
-                      bookingSuggestedType === 'triple'
-                        ? 'border-sky-600 bg-sky-50 text-sky-900 ring-2 ring-sky-500 font-bold shadow-2xs'
-                        : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium'
-                    }`}
-                  >
-                    <span className="block text-xs font-bold">Trippeltime ({clinicSlotMinutes * 3}m)</span>
-                    <span className="block text-[10px] text-sky-700 font-semibold mt-0.5">kr {workingHours?.prices?.triple ?? 2600},-</span>
-                  </button>
-                </div>
-
-                {/* Varighet og pris */}
-                <div className="py-1.5 px-2.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                  {/* Notat */}
                   <div>
-                    <span className="text-slate-400 font-semibold block text-[10px] uppercase">Varighet</span>
-                    <span className="font-bold text-slate-900 font-mono">
-                      {calculateDurationMinutes(bookingStartTime, bookingEndTime)} minutter
-                    </span>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-0.5">
+                      Beskjed (valgfritt)
+                    </label>
+                    <input
+                      type="text"
+                      value={bookingNotes}
+                      onChange={(e) => setBookingNotes(e.target.value)}
+                      placeholder="Kort beskjed til timen..."
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:outline-none bg-white"
+                    />
                   </div>
-                  <div className="text-right">
-                    <span className="text-slate-400 font-semibold block text-[10px] uppercase">Pris</span>
-                    <span className="font-extrabold text-emerald-700 text-sm">
-                      kr {bookingPrice},-
-                    </span>
-                  </div>
-                </div>
 
-                {/* Møteform */}
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-0.5">
-                    Møteform
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsOnlineMeeting(false)}
-                      className={`py-1.5 px-2 rounded-lg border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                        !isOnlineMeeting ? 'border-sky-600 bg-sky-50 text-sky-900 font-bold' : 'border-slate-200 text-slate-600'
-                      }`}
-                    >
-                      <MapPin className="w-3.5 h-3.5 text-sky-600" />
-                      <span className="text-xs">Fysisk møte</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setIsOnlineMeeting(true)}
-                      className={`py-1.5 px-2 rounded-lg border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                        isOnlineMeeting ? 'border-sky-600 bg-sky-50 text-sky-900 font-bold' : 'border-slate-200 text-slate-600'
-                      }`}
-                    >
-                      <Video className="w-3.5 h-3.5 text-sky-600" />
-                      <span className="text-xs">Online møte</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Notat */}
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-0.5">
-                    Beskjed (valgfritt)
-                  </label>
-                  <input
-                    type="text"
-                    value={bookingNotes}
-                    onChange={(e) => setBookingNotes(e.target.value)}
-                    placeholder="Kort beskjed til timen..."
-                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:outline-none bg-white"
-                  />
-                </div>
-
-                {/* Kollisjonsvarsel dersom tidspunkt overlapper */}
-                {therapistCollision && (
-                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 text-xs flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-bold block">Tidspunktet er opptatt for behandler</span>
-                      <span>
-                        {selectedTherapist?.displayName || 'Behandler'} har allerede en avtale i dette tidsrommet (kl. {therapistCollision.startTime}–{therapistCollision.endTime}
-                        {therapistCollision.clientName && currentUser?.role !== 'client' ? ` for ${therapistCollision.clientName}` : ''}).
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {clientCollision && clientCollision.id !== therapistCollision?.id && (
-                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 text-xs flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-bold block">Tidspunktet er opptatt for klienten</span>
-                      <span>
-                        Klienten har allerede en avtale i dette tidsrommet (kl. {clientCollision.startTime}–{clientCollision.endTime}
-                        {clientCollision.therapistName ? ` hos ${clientCollision.therapistName}` : ''}).
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Knapper */}
-                <div className="flex gap-2 pt-1">
-                  <button
-                    type="button"
-                    disabled={isSubmittingBooking}
-                    onClick={() => {
-                      setIsDaySlotsModalOpen(false);
-                      setEditingAppointmentId(null);
-                      setCancellingAptId(null);
-                    }}
-                    className="w-1/3 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
-                  >
-                    Avbryt
-                  </button>
-                  <button
-                    type="button"
-                    disabled={
-                      isSubmittingBooking || 
-                      calculateDurationMinutes(bookingStartTime, bookingEndTime) <= 0 ||
-                      Boolean(therapistCollision || clientCollision)
-                    }
-                    onClick={handleConfirmBooking}
-                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
-                      editingAppointmentId
-                        ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/20'
-                        : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/20'
-                    }`}
-                  >
-                    {isSubmittingBooking ? (
-                      <>
-                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        <span>Lagrer...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-4 h-4 flex-shrink-0" />
+                  {/* Kollisjonsvarsel dersom tidspunkt overlapper */}
+                  {therapistCollision && (
+                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 text-xs flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold block">Tidspunktet er opptatt for behandler</span>
                         <span>
-                          {editingAppointmentId 
-                            ? `Lagre endring (kl. ${bookingStartTime} – ${bookingEndTime})` 
-                            : `Bekreft time (kl. ${bookingStartTime} – ${bookingEndTime})`}
+                          {selectedTherapist?.displayName || 'Behandler'} har allerede en avtale i dette tidsrommet (kl. {therapistCollision.startTime}–{therapistCollision.endTime}
+                          {therapistCollision.clientName && currentUser?.role !== 'client' ? ` for ${therapistCollision.clientName}` : ''}).
                         </span>
-                      </>
-                    )}
-                  </button>
-                </div>
+                      </div>
+                    </div>
+                  )}
 
-              </div>
+                  {clientCollision && clientCollision.id !== therapistCollision?.id && (
+                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 text-xs flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold block">Tidspunktet er opptatt for klienten</span>
+                        <span>
+                          Klienten har allerede en avtale i dette tidsrommet (kl. {clientCollision.startTime}–{clientCollision.endTime}
+                          {clientCollision.therapistName ? ` hos ${clientCollision.therapistName}` : ''}).
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Knapper */}
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      disabled={isSubmittingBooking}
+                      onClick={() => {
+                        setIsDaySlotsModalOpen(false);
+                        setEditingAppointmentId(null);
+                        setCancellingAptId(null);
+                      }}
+                      className="w-1/3 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+                    >
+                      Avbryt
+                    </button>
+                    <button
+                      type="button"
+                      disabled={
+                        isSubmittingBooking || 
+                        calculateDurationMinutes(bookingStartTime, bookingEndTime) <= 0 ||
+                        Boolean(therapistCollision || clientCollision) ||
+                        (new Date(`${selectedDateStr}T${bookingStartTime}`) < new Date())
+                      }
+                      onClick={handleConfirmBooking}
+                      className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
+                        editingAppointmentId
+                          ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/20'
+                          : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/20'
+                      }`}
+                    >
+                      {isSubmittingBooking ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span>Lagrer...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4 flex-shrink-0" />
+                          <span>
+                            {editingAppointmentId 
+                              ? `Lagre endring (kl. ${bookingStartTime} – ${bookingEndTime})` 
+                              : `Bekreft time (kl. ${bookingStartTime} – ${bookingEndTime})`}
+                          </span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                </div>
+              )}
 
             </div>
 

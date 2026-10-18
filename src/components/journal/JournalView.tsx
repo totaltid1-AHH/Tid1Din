@@ -570,9 +570,9 @@ export const JournalView: React.FC<JournalViewProps> = ({
         const updatedEntry: JournalEntry = {
           ...existing,
           content: encrypted,
-          sessionDate: sessionDate || undefined,
-          sessionTime: sessionTime || undefined,
-          appointmentId: selectedAppointmentId || undefined,
+          sessionDate: existing.sessionDate || sessionDate || undefined,
+          sessionTime: existing.sessionTime || sessionTime || undefined,
+          appointmentId: existing.appointmentId || selectedAppointmentId || undefined,
           updatedAt: now,
           lastModifiedBy: currentUser.displayName,
           lastModifiedById: currentUser.uid,
@@ -616,6 +616,14 @@ export const JournalView: React.FC<JournalViewProps> = ({
 
         // Hvis "Avtal neste time samtidig" er valgt
         if (shouldBookNext && nextDate && nextStartTime) {
+          const nowObj = new Date();
+          const nextTarget = new Date(`${nextDate}T${nextStartTime}`);
+          if (nextTarget < nowObj) {
+            alert('Det er ikke mulig å avtale neste time tilbake i tid. Vennligst velg en fremtidig dato og tid.');
+            setIsSubmitting(false);
+            return;
+          }
+
           const nextApt: Appointment = {
             id: 'apt_' + Date.now(),
             clientId: selectedClient.uid,
@@ -670,6 +678,13 @@ export const JournalView: React.FC<JournalViewProps> = ({
   const handleCreateAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedClient || !currentUser) return;
+
+    const nowObj = new Date();
+    const targetDate = new Date(`${newAptDate}T${newAptTime}`);
+    if (targetDate < nowObj) {
+      alert('Det er ikke mulig å opprette avtaler tilbake i tid. Vennligst velg en fremtidig dato og tid.');
+      return;
+    }
 
     try {
       const finalEndTime = newAptEndTime || calculateEndTime(newAptTime, 45);
@@ -1371,27 +1386,39 @@ export const JournalView: React.FC<JournalViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                    Dato for samtalen *
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1 flex items-center justify-between">
+                    <span>Dato for samtalen *</span>
+                    {(editingEntryId || selectedAppointmentId) && (
+                      <span className="text-[10px] text-amber-700 font-semibold flex items-center gap-0.5">
+                        <Lock className="w-2.5 h-2.5" /> Låst
+                      </span>
+                    )}
                   </label>
                   <input
                     type="date"
                     required
+                    disabled={!!editingEntryId || !!selectedAppointmentId}
                     value={sessionDate}
                     onChange={(e) => setSessionDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs bg-white text-slate-800 outline-none focus:border-sky-500"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs bg-white text-slate-800 outline-none focus:border-sky-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed font-medium"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                    Klokkeslett *
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1 flex items-center justify-between">
+                    <span>Klokkeslett *</span>
+                    {(editingEntryId || selectedAppointmentId) && (
+                      <span className="text-[10px] text-amber-700 font-semibold flex items-center gap-0.5">
+                        <Lock className="w-2.5 h-2.5" /> Låst
+                      </span>
+                    )}
                   </label>
                   <select
                     required
+                    disabled={!!editingEntryId || !!selectedAppointmentId}
                     value={sessionTime}
                     onChange={(e) => setSessionTime(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs bg-white text-slate-800 outline-none focus:border-sky-500 font-mono font-bold"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs bg-white text-slate-800 outline-none focus:border-sky-500 font-mono font-bold disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                   >
                     {generateTimeOptions([sessionTime]).map(t => (
                       <option key={t} value={t}>{t}</option>
@@ -1399,6 +1426,13 @@ export const JournalView: React.FC<JournalViewProps> = ({
                   </select>
                 </div>
               </div>
+
+              {(editingEntryId || selectedAppointmentId) && (
+                <p className="text-[11px] text-slate-500 italic flex items-center gap-1.5 px-1 -mt-1">
+                  <Lock className="w-3 h-3 text-amber-600 flex-shrink-0" />
+                  <span>Dato og klokkeslett for gjennomførte eller tilknyttede timer er låst og kan ikke endres.</span>
+                </p>
+              )}
 
               {/* FORMATERINGSVERKTØY & MALER (Spørsmål 3: Fet tekst, overskrifter, lister) */}
               <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-xl bg-slate-100/80 border border-slate-200 text-xs">
@@ -1568,6 +1602,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
                         </label>
                         <input
                           type="date"
+                          min={format(new Date(), 'yyyy-MM-dd')}
                           required={shouldBookNext}
                           value={nextDate}
                           onChange={(e) => setNextDate(e.target.value)}
@@ -1848,6 +1883,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
                 </label>
                 <input
                   type="date"
+                  min={format(new Date(), 'yyyy-MM-dd')}
                   required
                   value={newAptDate}
                   onChange={(e) => setNewAptDate(e.target.value)}

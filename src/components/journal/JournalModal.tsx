@@ -176,9 +176,9 @@ export const JournalModal: React.FC<JournalModalProps> = ({
         const updatedEntry: JournalEntry = {
           ...existing,
           content: encrypted,
-          sessionDate: sessionDate || undefined,
-          sessionTime: sessionTime || undefined,
-          appointmentId: selectedAppointmentId || undefined,
+          sessionDate: existing.sessionDate || sessionDate || undefined,
+          sessionTime: existing.sessionTime || sessionTime || undefined,
+          appointmentId: existing.appointmentId || selectedAppointmentId || undefined,
           updatedAt: now,
           lastModifiedBy: currentUser.displayName,
           lastModifiedById: currentUser.uid,
@@ -342,27 +342,39 @@ export const JournalModal: React.FC<JournalModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                    Dato for timen *
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1 flex items-center justify-between">
+                    <span>Dato for timen *</span>
+                    {(editingEntryId || selectedAppointmentId) && (
+                      <span className="text-[10px] text-amber-700 font-semibold flex items-center gap-0.5">
+                        <Lock className="w-2.5 h-2.5" /> Låst
+                      </span>
+                    )}
                   </label>
                   <input
                     type="date"
                     required
+                    disabled={!!editingEntryId || !!selectedAppointmentId}
                     value={sessionDate}
                     onChange={(e) => setSessionDate(e.target.value)}
-                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-sky-500"
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed font-medium"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                    Klokkeslett for timen *
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1 flex items-center justify-between">
+                    <span>Klokkeslett for timen *</span>
+                    {(editingEntryId || selectedAppointmentId) && (
+                      <span className="text-[10px] text-amber-700 font-semibold flex items-center gap-0.5">
+                        <Lock className="w-2.5 h-2.5" /> Låst
+                      </span>
+                    )}
                   </label>
                   <select
                     required
+                    disabled={!!editingEntryId || !!selectedAppointmentId}
                     value={sessionTime}
                     onChange={(e) => setSessionTime(e.target.value)}
-                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-sky-500 font-mono font-bold"
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-sky-500 font-mono font-bold disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                   >
                     {generateTimeOptions([sessionTime]).map(t => (
                       <option key={t} value={t}>{t}</option>
@@ -370,6 +382,13 @@ export const JournalModal: React.FC<JournalModalProps> = ({
                   </select>
                 </div>
               </div>
+
+              {(editingEntryId || selectedAppointmentId) && (
+                <p className="text-[11px] text-slate-500 italic flex items-center gap-1.5 px-1 -mt-1">
+                  <Lock className="w-3 h-3 text-amber-600 flex-shrink-0" />
+                  <span>Dato og klokkeslett for gjennomførte eller tilknyttede timer er låst og kan ikke endres.</span>
+                </p>
+              )}
 
               {/* Notatfelt med god plass på PC/Mac */}
               <div>

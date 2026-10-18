@@ -277,6 +277,21 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
       return;
     }
 
+    const now = new Date();
+    if (selectedAppointment) {
+      const existingEnd = new Date(`${selectedAppointment.date}T${selectedAppointment.endTime}`);
+      if (existingEnd < now) {
+        alert('Tidligere eller gjennomførte timer kan ikke ombookes.');
+        return;
+      }
+    }
+
+    const targetDateTime = new Date(`${newDate}T${newStartTime}`);
+    if (targetDateTime < now) {
+      alert('Det er ikke mulig å flytte en time tilbake i tid. Vennligst velg et fremtidig tidspunkt.');
+      return;
+    }
+
     setIsSending(true);
     try {
       // Beregn ny sluttid
@@ -656,6 +671,7 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
                     <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Ny dato *</label>
                     <input
                       type="date"
+                      min={format(new Date(), 'yyyy-MM-dd')}
                       value={newDate}
                       onChange={(e) => handleDateOrTimeChange(e.target.value, newStartTime)}
                       className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 font-mono"
@@ -675,6 +691,20 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
                     </select>
                   </div>
                 </div>
+
+                {new Date(`${newDate}T${newStartTime}`) < new Date() && (
+                  <div className="p-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                    <span>Nytt tidspunkt kan ikke være tilbake i tid.</span>
+                  </div>
+                )}
+
+                {selectedAppointment && new Date(`${selectedAppointment.date}T${selectedAppointment.endTime}`) < new Date() && (
+                  <div className="p-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-600 flex-shrink-0" />
+                    <span>Denne avtalen er tidligere gjennomført og kan ikke flyttes.</span>
+                  </div>
+                )}
 
                 <div className="text-[11px] text-slate-600 flex items-center gap-1.5 pt-1">
                   <span className="text-slate-400">Gammel tid:</span>
@@ -711,7 +741,11 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
                 <button
                   type="button"
                   onClick={() => handleRescheduleAppointment(false)}
-                  disabled={isSending}
+                  disabled={
+                    isSending || 
+                    (new Date(`${newDate}T${newStartTime}`) < new Date()) || 
+                    (!!selectedAppointment && new Date(`${selectedAppointment.date}T${selectedAppointment.endTime}`) < new Date())
+                  }
                   className="py-2.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold disabled:opacity-50 transition-colors"
                 >
                   Kun ombook (uten SMS)
@@ -720,7 +754,12 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
                 <button
                   type="button"
                   onClick={() => handleRescheduleAppointment(true)}
-                  disabled={isSending || !recipientPhone}
+                  disabled={
+                    isSending || 
+                    !recipientPhone || 
+                    (new Date(`${newDate}T${newStartTime}`) < new Date()) || 
+                    (!!selectedAppointment && new Date(`${selectedAppointment.date}T${selectedAppointment.endTime}`) < new Date())
+                  }
                   className="py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 transition-colors"
                 >
                   <Send className="w-4 h-4" />

@@ -437,6 +437,13 @@ export const BookingView: React.FC<BookingViewProps> = ({
       return;
     }
 
+    const now = new Date();
+    const targetStartDateTime = new Date(`${selectedDateStr}T${startTime}`);
+    if (targetStartDateTime < now) {
+      alert('Det er ikke mulig å opprette avtaler tilbake i tid. Vennligst velg et fremtidig tidspunkt.');
+      return;
+    }
+
     setIsSubmittingBooking(true);
 
     try {
@@ -970,11 +977,23 @@ export const BookingView: React.FC<BookingViewProps> = ({
               </div>
             )}
 
+            {new Date(`${selectedDateStr}T${startTime}`) < new Date() && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-900 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                <span>Valgt tidspunkt ({selectedDateStr} kl. {startTime}) er tilbake i tid. Velg et tidspunkt frem i tid.</span>
+              </div>
+            )}
+
             {/* BEKREFT-KNAPP */}
             <div className="pt-2">
               <button
                 type="button"
-                disabled={isSubmittingBooking || durationMinutes <= 0 || Boolean(therapistCollision || clientCollision)}
+                disabled={
+                  isSubmittingBooking || 
+                  durationMinutes <= 0 || 
+                  Boolean(therapistCollision || clientCollision) ||
+                  (new Date(`${selectedDateStr}T${startTime}`) < new Date())
+                }
                 onClick={handleConfirmBooking}
                 className="w-full py-3 px-4 rounded-xl bg-sky-600 hover:bg-sky-700 active:scale-98 text-white font-bold text-xs sm:text-sm shadow-md shadow-sky-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
