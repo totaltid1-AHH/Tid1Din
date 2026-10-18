@@ -11,8 +11,6 @@ import {
   Search, 
   FileText, 
   Phone, 
-  Mail, 
-  MapPin, 
   Trash2, 
   X, 
   ShieldCheck,
@@ -63,7 +61,6 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
 
   const canViewName = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientName !== false;
   const canViewPhone = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientPhone !== false;
-  const canViewEmail = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientEmail !== false;
   const canEditJournals = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canEditJournals !== false;
   const isSuperAdmin = currentUser?.role === 'hovedadmin';
 
@@ -236,13 +233,12 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
       {/* Kolonnebasert tabellvisning for klienter */}
       <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-slate-200 shadow-xs overflow-hidden w-full">
         <div className="overflow-x-auto max-w-full">
-          <table className="w-full text-left text-xs text-slate-600 min-w-[760px]">
+          <table className="w-full text-left text-xs text-slate-600 min-w-[550px]">
             <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] border-b border-slate-200">
               <tr>
                 <th className="py-3 px-4">Klient / Navn</th>
                 <th className="py-3 px-3">Telefon</th>
-                <th className="py-3 px-3">E-post</th>
-                <th className="py-3 px-3">Fødselsdato & Adresse</th>
+                <th className="py-3 px-3">Fødselsdato</th>
                 <th className="py-3 px-3">Status</th>
                 <th className="py-3 px-4 text-right">Handlinger</th>
               </tr>
@@ -250,7 +246,7 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
             <tbody className="divide-y divide-slate-100">
               {filteredClients.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-400 italic">
+                  <td colSpan={5} className="py-8 text-center text-slate-400 italic">
                     Ingen klienter funnet som matcher søket.
                   </td>
                 </tr>
@@ -258,24 +254,12 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
                 filteredClients.map((client) => {
                   const displayName = canViewName ? client.displayName : `Klient #${client.customerNumber || 1000}`;
                   const displayPhone = canViewPhone ? (client.phone || 'Ikke oppgitt') : maskPersonalInfo(client.phone, 'phone');
-                  const displayEmail = canViewEmail ? client.email : maskPersonalInfo(client.email, 'email');
                   const isDeactivated = client.isActive === false;
 
                   return (
                     <tr
                       key={client.uid}
-                      onClick={() => {
-                        if (canEditJournals) {
-                          if (onOpenJournal) {
-                            onOpenJournal(client.uid);
-                          } else {
-                            setSelectedJournalClient(client);
-                            setIsJournalOpen(true);
-                          }
-                        }
-                      }}
-                      className={`hover:bg-sky-50/60 transition-colors cursor-pointer ${isDeactivated ? 'bg-slate-50/50 opacity-75' : ''}`}
-                      title={canEditJournals ? "Trykk for å se tidligere notater og skrive timejournal" : undefined}
+                      className={`hover:bg-slate-50/80 transition-colors ${isDeactivated ? 'bg-slate-50/50 opacity-75' : ''}`}
                     >
                       {/* Navn & Kundenr */}
                       <td className="py-3 px-4">
@@ -283,22 +267,14 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
                           <span className="px-2 py-0.5 rounded bg-sky-50 text-sky-700 font-bold font-mono text-xs border border-sky-100 flex-shrink-0">
                             #{client.customerNumber || 1000}
                           </span>
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-slate-900 text-sm hover:text-sky-700 transition-colors">
-                                {displayName}
-                              </span>
-                              {client.twoFactorEnabled && (
-                                <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
-                                  <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />
-                                  2FA
-                                </span>
-                              )}
-                            </div>
-                            {canEditJournals && (
-                              <span className="text-[10px] text-sky-600 flex items-center gap-1 font-medium mt-0.5">
-                                <FileText className="w-2.5 h-2.5" />
-                                Klikk for å se notater & skrive journal
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-slate-900 text-sm">
+                              {displayName}
+                            </span>
+                            {client.twoFactorEnabled && (
+                              <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                                <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />
+                                2FA
                               </span>
                             )}
                           </div>
@@ -319,38 +295,13 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
                         )}
                       </td>
 
-                      {/* E-post */}
-                      <td className="py-3 px-3 text-slate-700">
-                        {canViewEmail && client.email ? (
-                          <div className="flex items-center gap-1.5">
-                            <Mail className="w-3 h-3 text-slate-400 flex-shrink-0" />
-                            <span className="truncate max-w-[160px] inline-block" title={client.email}>
-                              {client.email}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className={canViewEmail ? "text-slate-400 italic" : "text-slate-500 font-mono"}>
-                            {displayEmail}
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Fødselsdato & Adresse */}
+                      {/* Fødselsdato */}
                       <td className="py-3 px-3 text-slate-600">
-                        <div>
-                          {client.birthDate ? (
-                            <span className="font-mono text-[11px] block text-slate-700">{client.birthDate}</span>
-                          ) : null}
-                          {client.address ? (
-                            <span className="text-[11px] text-slate-500 flex items-center gap-1">
-                              <MapPin className="w-2.5 h-2.5 text-slate-400 flex-shrink-0" />
-                              <span className="truncate max-w-[140px]">{client.address}</span>
-                            </span>
-                          ) : null}
-                          {!client.birthDate && !client.address && (
-                            <span className="text-slate-400 italic text-[11px]">-</span>
-                          )}
-                        </div>
+                        {client.birthDate ? (
+                          <span className="font-mono text-[11px] block text-slate-700">{client.birthDate}</span>
+                        ) : (
+                          <span className="text-slate-400 italic text-[11px]">-</span>
+                        )}
                       </td>
 
                       {/* Status */}
@@ -370,7 +321,7 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
 
                       {/* Handlinger */}
                       <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1.5">
                           {canEditJournals ? (
                             <button
                               onClick={() => {
