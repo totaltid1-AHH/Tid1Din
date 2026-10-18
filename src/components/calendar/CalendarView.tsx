@@ -19,6 +19,7 @@ import { nb } from 'date-fns/locale';
 import { 
   ChevronLeft, 
   ChevronRight, 
+  ChevronDown,
   Calendar as CalendarIcon, 
   Clock, 
   Video, 
@@ -31,7 +32,9 @@ import {
   UserX,
   CheckCircle2,
   ExternalLink,
-  Plus
+  Plus,
+  Edit2,
+  Trash2
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { dbService } from '../../services/db';
@@ -51,8 +54,6 @@ import {
   formatMinutes, 
   parseMinutes,
   formatTherapistName,
-  checkLunchCollision,
-  findContinuousAlternativeSlots,
   isDateInHoliday,
   isTherapistOnLeave
 } from '../../utils/calendar';
@@ -83,20 +84,19 @@ export const CalendarView: React.FC = () => {
   const [selectedTherapistId, setSelectedTherapistId] = useState<string>(initialTherapistId);
   const [isDaySlotsModalOpen, setIsDaySlotsModalOpen] = useState(false);
 
-  // Booking modal state
-  const [selectedSlot, setSelectedSlot] = useState<GeneratedSlot | null>(null);
-  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
-  const [bookingSlotType, setBookingSlotType] = useState<SlotTypeOption>(DEFAULT_SLOT_TYPES[0]);
+  // Booking form state
+  const clinicSlotMinutes = workingHours?.slotDurationMinutes || 45;
+  const [bookingStartTime, setBookingStartTime] = useState('10:00');
+  const [bookingEndTime, setBookingEndTime] = useState('10:45');
+  const [bookingSuggestedType, setBookingSuggestedType] = useState<'single' | 'double' | 'triple' | null>('single');
+  const [bookingPrice, setBookingPrice] = useState<number>(() => dbService.getCachedWorkingHours(initialTherapistId)?.prices?.single ?? 950);
   const [isOnlineMeeting, setIsOnlineMeeting] = useState(false);
   const [bookingNotes, setBookingNotes] = useState('');
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
   const [bookingSuccessMessage, setBookingSuccessMessage] = useState<string | null>(null);
-
-  // Lunsj-forslag og status for valg
-  const [lunchSuggestionStatus, setLunchSuggestionStatus] = useState<'pending' | 'accepted' | 'declined'>('pending');
-  const [originalSlotBeforeSuggestion, setOriginalSlotBeforeSuggestion] = useState<GeneratedSlot | null>(null);
-  const [acceptedSlotTime, setAcceptedSlotTime] = useState<{ start: string; end: string; label: string } | null>(null);
+  const [editingAppointmentId, setEditingAppointmentId] = useState<string | null>(null);
+  const [cancellingAptId, setCancellingAptId] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -253,97 +253,166 @@ export const CalendarView: React.FC = () => {
 
   const handleDayClick = (day: Date) => {
     setSelectedDate(day);
+    if (currentUser?.role === 'admin' || currentUser?.role === 'hovedadmin') {
+      if (therapists.some(t => t.uid === currentUser.uid)) {
+        if (selectedTherapistId !== currentUser.uid) {
+          handleTherapistChange(currentUser.uid);
+        }
+      }
+    }
+    const clinicDur = workingHours?.slotDurationMinutes || 45;
+    setEditingAppointmentId(null);
+    setCancellingAptId(null);
+    setBookingStartTime('10:00');
+    setBookingEndTime(calculateEndTime('10:00', clinicDur / 60));
+    setBookingSuggestedType('single');
+    setBookingPrice(workingHours?.prices?.single ?? 950);
+    setBookingNotes('');
+    setIsOnlineMeeting(false);
+    if (currentUser?.role !== 'client' && clients.length > 0 && !selectedClientId) {
+      setSelectedClientId(clients[0].uid);
+    }
     setIsDaySlotsModalOpen(true);
   };
 
-  // Sjekk om valgt time og varighet kolliderer med lunsjpause
-  const lunchCollision = (selectedSlot && workingHours)
-    ? checkLunchCollision(selectedSlot.startTime, bookingSlotType.durationMinutes, workingHours)
-    : { collides: false, lunchDurationMinutes: 0 };
+  const handleStartEditAppointment = (apt: Appointment) => {
+    setEditingAppointmentId(apt.id);
+    setCancellingAptId(null);
+    setSelectedClientId(apt.clientId);
+    setBookingStartTime(apt.startTime);
+    setBookingEndTime(apt.endTime);
+    setBookingPrice(apt.price);
+    setIsOnlineMeeting(apt.isOnline);
+    setBookingNotes(apt.notes || '');
 
-  // Forslag til alternative sammenhengende tider før eller etter lunsj
-  const alternativeSlots = (lunchCollision.collides && selectedSlot && workingHours)
-    ? findContinuousAlternativeSlots(
-        daySlots,
-        bookingSlotType.durationMinutes,
-        workingHours,
-        therapistAppointments,
-        selectedSlot.date
-      )
-    : {};
-
-  const slotTypeOptions: SlotTypeOption[] = [
-    {
-      type: 'single',
-      title: 'Enkelttime',
-      durationMinutes: 45,
-      price: workingHours?.prices?.single ?? 850
-    },
-    {
-      type: 'double',
-      title: 'Dobbelttime',
-      durationMinutes: 90,
-      price: workingHours?.prices?.double ?? 1600
-    },
-    {
-      type: 'triple',
-      title: 'Trippeltime',
-      durationMinutes: 135,
-      price: workingHours?.prices?.triple ?? 2300
+    const clinicDur = workingHours?.slotDurationMinutes || 45;
+    const dur = calculateDurationMinutes(apt.startTime, apt.endTime);
+    if (dur === clinicDur) {
+      setBookingSuggestedType('single');
+    } else if (dur === clinicDur * 2) {
+      setBookingSuggestedType('double');
+    } else if (dur === clinicDur * 3) {
+      setBookingSuggestedType('triple');
+    } else {
+      setBookingSuggestedType(null);
     }
-  ];
-
-  const handleOpenBooking = (slot: GeneratedSlot) => {
-    if (!slot.isAvailable) return;
-    setSelectedSlot(slot);
-    setOriginalSlotBeforeSuggestion(slot);
-    setLunchSuggestionStatus('pending');
-    setAcceptedSlotTime(null);
-    setBookingSlotType(slotTypeOptions[0]);
-    if (currentUser?.role !== 'client' && !selectedClientId && clients.length > 0) {
-      setSelectedClientId(clients[0].uid);
-    }
-    setIsDaySlotsModalOpen(false);
-    setIsBookingModalOpen(true);
-    setBookingSuccessMessage(null);
   };
 
-  const handleAcceptSuggestion = (altSlot: GeneratedSlot, label: string) => {
-    if (!originalSlotBeforeSuggestion && selectedSlot) {
-      setOriginalSlotBeforeSuggestion(selectedSlot);
-    }
-    const endMin = parseMinutes(altSlot.startTime) + bookingSlotType.durationMinutes;
-    const endTimeStr = formatMinutes(endMin);
-
-    setSelectedSlot(altSlot);
-    setLunchSuggestionStatus('accepted');
-    setAcceptedSlotTime({
-      start: altSlot.startTime,
-      end: endTimeStr,
-      label: label.toLowerCase()
-    });
+  const handleCancelEditAppointment = () => {
+    setEditingAppointmentId(null);
+    const clinicDur = workingHours?.slotDurationMinutes || 45;
+    setBookingStartTime('10:00');
+    setBookingEndTime(calculateEndTime('10:00', clinicDur / 60));
+    setBookingSuggestedType('single');
+    setBookingPrice(workingHours?.prices?.single ?? 950);
+    setBookingNotes('');
+    setIsOnlineMeeting(false);
   };
 
-  const handleRevertSuggestion = () => {
-    if (originalSlotBeforeSuggestion) {
-      setSelectedSlot(originalSlotBeforeSuggestion);
+  const handleCancelAppointment = async (aptId: string) => {
+    if (!currentUser) return;
+    try {
+      const aptToCancel = appointments.find(a => a.id === aptId);
+      await dbService.cancelAppointment(aptId, 'Avlyst av behandler/admin');
+      await dbService.logAction(
+        { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
+        'cancel_appointment',
+        `Avlyste time ${aptToCancel?.date} kl. ${aptToCancel?.startTime} for ${aptToCancel?.clientName}`
+      );
+      if (editingAppointmentId === aptId) {
+        handleCancelEditAppointment();
+      }
+      setCancellingAptId(null);
+      await loadData();
+      setBookingSuccessMessage('Timen ble avlyst.');
+      setTimeout(() => setBookingSuccessMessage(null), 3000);
+    } catch (e: any) {
+      alert('Kunne ikke avlyse timen: ' + e.message);
     }
-    setLunchSuggestionStatus('pending');
-    setAcceptedSlotTime(null);
   };
 
-  const handleSlotTypeChange = (st: SlotTypeOption) => {
-    // Hvis timen tidligere var flyttet av forslag, gå tilbake til opprinnelig luke for ny vurdering
-    if (lunchSuggestionStatus === 'accepted' && originalSlotBeforeSuggestion) {
-      setSelectedSlot(originalSlotBeforeSuggestion);
+  const calculateEndTime = (start: string, hours: number): string => {
+    const [hStr, mStr] = (start || '10:00').split(':');
+    const h = parseInt(hStr, 10);
+    const m = parseInt(mStr, 10);
+    if (isNaN(h) || isNaN(m)) return '10:45';
+    const totalMin = h * 60 + m + Math.round(hours * 60);
+    const newH = Math.floor(totalMin / 60) % 24;
+    const newM = totalMin % 60;
+    return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+  };
+
+  const calculateDurationMinutes = (start: string, end: string): number => {
+    const [sh, sm] = (start || '00:00').split(':').map(Number);
+    const [eh, em] = (end || '00:00').split(':').map(Number);
+    const startMin = (sh || 0) * 60 + (sm || 0);
+    const endMin = (eh || 0) * 60 + (em || 0);
+    return endMin > startMin ? endMin - startMin : 0;
+  };
+
+  const applyDurationSuggestion = (slotType: 'single' | 'double' | 'triple') => {
+    setBookingSuggestedType(slotType);
+    const clinicDur = workingHours?.slotDurationMinutes || 45;
+    let multiplier = 1;
+    let targetPrice = workingHours?.prices?.single ?? 950;
+
+    if (slotType === 'double') {
+      multiplier = 2;
+      targetPrice = workingHours?.prices?.double ?? 1800;
+    } else if (slotType === 'triple') {
+      multiplier = 3;
+      targetPrice = workingHours?.prices?.triple ?? 2600;
     }
-    setBookingSlotType(st);
-    setLunchSuggestionStatus('pending');
-    setAcceptedSlotTime(null);
+
+    const newEnd = calculateEndTime(bookingStartTime, (clinicDur * multiplier) / 60);
+    setBookingEndTime(newEnd);
+    setBookingPrice(targetPrice);
+  };
+
+  const handleBookingStartTimeChange = (newStart: string) => {
+    setBookingStartTime(newStart);
+    const curDur = calculateDurationMinutes(bookingStartTime, bookingEndTime);
+    if (curDur > 0) {
+      setBookingEndTime(calculateEndTime(newStart, curDur / 60));
+    } else {
+      const clinicDur = workingHours?.slotDurationMinutes || 45;
+      setBookingEndTime(calculateEndTime(newStart, clinicDur / 60));
+    }
+  };
+
+  const handleBookingEndTimeChange = (newEnd: string) => {
+    setBookingEndTime(newEnd);
+    const dur = calculateDurationMinutes(bookingStartTime, newEnd);
+    const clinicDur = workingHours?.slotDurationMinutes || 45;
+
+    if (dur === clinicDur) {
+      setBookingSuggestedType('single');
+      setBookingPrice(workingHours?.prices?.single ?? 950);
+    } else if (dur === clinicDur * 2) {
+      setBookingSuggestedType('double');
+      setBookingPrice(workingHours?.prices?.double ?? 1800);
+    } else if (dur === clinicDur * 3) {
+      setBookingSuggestedType('triple');
+      setBookingPrice(workingHours?.prices?.triple ?? 2600);
+    } else {
+      setBookingSuggestedType(null);
+      if (dur <= clinicDur) {
+        setBookingPrice(workingHours?.prices?.single ?? 950);
+      } else if (dur <= clinicDur * 2) {
+        setBookingPrice(workingHours?.prices?.double ?? 1800);
+      } else {
+        setBookingPrice(workingHours?.prices?.triple ?? 2600);
+      }
+    }
   };
 
   const handleConfirmBooking = async () => {
-    if (!selectedSlot || !workingHours || !currentUser) return;
+    if (!currentUser) return;
+    const dur = calculateDurationMinutes(bookingStartTime, bookingEndTime);
+    if (dur <= 0) {
+      alert('Sluttidspunkt må være etter starttidspunkt.');
+      return;
+    }
     setIsSubmittingBooking(true);
 
     try {
@@ -360,24 +429,54 @@ export const CalendarView: React.FC = () => {
         return;
       }
 
-      const startMin = parseMinutes(selectedSlot.startTime);
-      // Dersom timen kolliderer med lunsj og IKKE er flyttet via godkjent forslag, utvides slutten med lunsjpausen slik at timen gjennomføres
-      const isStillColliding = lunchSuggestionStatus !== 'accepted' && lunchCollision.collides;
-      const totalSpanMinutes = isStillColliding
-        ? bookingSlotType.durationMinutes + lunchCollision.lunchDurationMinutes
-        : bookingSlotType.durationMinutes;
-      const endMin = startMin + totalSpanMinutes;
-      const calculatedEndTime = formatMinutes(endMin);
+      const clinicDur = workingHours?.slotDurationMinutes || 45;
+      let slotType: 'single' | 'double' | 'triple' = 'single';
+      if (dur >= clinicDur * 3) slotType = 'triple';
+      else if (dur >= clinicDur * 2) slotType = 'double';
+
+      if (editingAppointmentId) {
+        const existingApt = appointments.find(a => a.id === editingAppointmentId);
+        if (existingApt) {
+          const meetingLink = isOnlineMeeting 
+            ? (existingApt.meetingLink || smsService.generateMeetingLink(existingApt.id)) 
+            : undefined;
+
+          const updatedAppointment: Appointment = {
+            ...existingApt,
+            clientId: clientObj.uid,
+            clientNumber: clientObj.customerNumber || 1000,
+            clientName: clientObj.displayName,
+            clientPhone: clientObj.phone || existingApt.clientPhone || '',
+            clientEmail: clientObj.email || existingApt.clientEmail || '',
+            startTime: bookingStartTime,
+            endTime: bookingEndTime,
+            durationMinutes: dur,
+            slotType,
+            price: bookingPrice,
+            isOnline: isOnlineMeeting,
+            meetingLink,
+            notes: bookingNotes || undefined,
+            updatedAt: new Date().toISOString()
+          };
+
+          await dbService.saveAppointment(updatedAppointment);
+          await dbService.logAction(
+            { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
+            'update_appointment',
+            `Endret time for ${clientObj.displayName} den ${updatedAppointment.date} til kl. ${updatedAppointment.startTime}–${updatedAppointment.endTime}`
+          );
+
+          await loadData();
+          setIsDaySlotsModalOpen(false);
+          setEditingAppointmentId(null);
+          setBookingSuccessMessage(`Avtalen for ${clientObj.displayName} ble oppdatert!`);
+          setTimeout(() => setBookingSuccessMessage(null), 3000);
+          return;
+        }
+      }
 
       const appointmentId = 'apt_' + Date.now();
       const meetingLink = isOnlineMeeting ? smsService.generateMeetingLink(appointmentId) : undefined;
-
-      const finalNotes = isStillColliding && lunchCollision.lunchBreak
-        ? [
-            bookingNotes,
-            `(Merk: Timen blir avbrutt av ${lunchCollision.lunchBreak.title || 'lunsjpause'} kl. ${lunchCollision.lunchBreak.start}–${lunchCollision.lunchBreak.end})`
-          ].filter(Boolean).join(' ')
-        : bookingNotes;
 
       const newAppointment: Appointment = {
         id: appointmentId,
@@ -388,22 +487,22 @@ export const CalendarView: React.FC = () => {
         clientEmail: clientObj.email || '',
         therapistId: selectedTherapist?.uid,
         therapistName: formatTherapistName(selectedTherapist?.displayName),
-        date: selectedSlot.date,
-        startTime: selectedSlot.startTime,
-        endTime: calculatedEndTime,
-        durationMinutes: bookingSlotType.durationMinutes,
-        slotType: bookingSlotType.type,
-        price: bookingSlotType.price,
+        date: selectedDateStr,
+        startTime: bookingStartTime,
+        endTime: bookingEndTime,
+        durationMinutes: dur,
+        slotType,
+        price: bookingPrice,
         isOnline: isOnlineMeeting,
         ...(meetingLink ? { meetingLink } : {}),
         status: 'confirmed',
-        ...(finalNotes ? { notes: finalNotes } : {}),
+        ...(bookingNotes ? { notes: bookingNotes } : {}),
         createdAt: new Date().toISOString()
       };
 
       await dbService.saveAppointment(newAppointment);
 
-      // Send SMS med sikker timeout (maks 3,5 sekunder) slik at grensesnittet aldri henger på «vent»
+      // Send SMS med sikker timeout (maks 3,5 sekunder)
       let smsSentOk = false;
       try {
         const smsLog = await Promise.race([
@@ -418,17 +517,13 @@ export const CalendarView: React.FC = () => {
       await dbService.logAction(
         { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
         'create_appointment',
-        `Bestilte ${bookingSlotType.title} hos ${selectedTherapist?.displayName || 'terapeut'} for ${clientObj.displayName} den ${newAppointment.date} kl. ${newAppointment.startTime}`
+        `Bestilte time hos ${selectedTherapist?.displayName || 'terapeut'} for ${clientObj.displayName} den ${newAppointment.date} kl. ${newAppointment.startTime}–${newAppointment.endTime}`
       );
 
       await loadData();
-      setIsBookingModalOpen(false);
+      setIsDaySlotsModalOpen(false);
       setBookingSuccessMessage(`Timen er bekreftet for ${clientObj.displayName}! SMS-varsel ${smsSentOk ? 'sendt' : 'registrert'}.`);
-      setSelectedSlot(null);
       setBookingNotes('');
-      setLunchSuggestionStatus('pending');
-      setAcceptedSlotTime(null);
-      setOriginalSlotBeforeSuggestion(null);
     } catch (e: any) {
       alert('Feil ved bestilling: ' + e.message);
     } finally {
@@ -490,23 +585,13 @@ export const CalendarView: React.FC = () => {
           <div className="flex items-center justify-between lg:justify-end gap-2 sm:gap-4 w-full lg:w-auto flex-wrap">
             {/* Fargekoder */}
             <div className="flex items-center gap-2 sm:gap-3 text-[11px] font-medium text-slate-500 flex-wrap">
-              {isClient && (
-                <span className="flex items-center gap-1" title="Dine avtalte timer">
-                  <span className="w-2.5 h-2.5 rounded-full bg-sky-600 ring-2 ring-sky-300 flex-shrink-0"></span>
-                  <span className="font-bold text-sky-800">Din time</span>
-                </span>
-              )}
-              <span className="flex items-center gap-1" title="Alle timer ledige">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"></span>
-                <span>Ledig</span>
+              <span className="flex items-center gap-1" title="Avtalt time">
+                <span className="w-2.5 h-2.5 rounded-full bg-sky-600 ring-2 ring-sky-300 flex-shrink-0"></span>
+                <span className="font-bold text-sky-800">{isClient ? 'Din time' : 'Avtalt time'}</span>
               </span>
-              <span className="flex items-center gap-1" title="Noen timer bestilt">
-                <span className="px-1 py-0.2 rounded text-[9px] font-bold font-mono bg-sky-100 text-sky-800 border border-sky-200 flex-shrink-0">7/8</span>
-                <span className="hidden xs:inline">Dels</span>
-              </span>
-              <span className="flex items-center gap-1" title="Fullt">
-                <span className="w-2 h-2 rounded-full bg-rose-500 flex-shrink-0"></span>
-                <span>Fullt</span>
+              <span className="flex items-center gap-1" title="Ferie eller fravær">
+                <Palmtree className="w-3 h-3 text-amber-600 flex-shrink-0" />
+                <span>Ferie / fravær</span>
               </span>
             </div>
 
@@ -709,20 +794,35 @@ export const CalendarView: React.FC = () => {
                         </span>
                       )}
 
-                      <button
-                        onClick={() => {
-                          const dateObj = new Date(apt.date);
-                          setCurrentDate(dateObj);
-                          setSelectedDate(dateObj);
-                          if (apt.therapistId && apt.therapistId !== selectedTherapistId) {
-                            handleTherapistChange(apt.therapistId);
-                          }
-                          setIsDaySlotsModalOpen(true);
-                        }}
-                        className="px-2.5 py-1 rounded-lg bg-white hover:bg-sky-100 text-sky-800 border border-sky-300 text-xs font-bold transition-colors cursor-pointer ml-auto"
-                      >
-                        Vis time i kalender &rarr;
-                      </button>
+                      <div className="flex items-center gap-1.5 ml-auto">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`Er du sikker på at du vil avlyse timen den ${apt.date} kl. ${apt.startTime}?`)) {
+                              handleCancelAppointment(apt.id);
+                            }
+                          }}
+                          className="px-2 py-1 rounded-lg bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3 text-rose-600" />
+                          <span>Avlys</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            const dateObj = new Date(apt.date);
+                            setCurrentDate(dateObj);
+                            setSelectedDate(dateObj);
+                            if (apt.therapistId && apt.therapistId !== selectedTherapistId) {
+                              handleTherapistChange(apt.therapistId);
+                            }
+                            handleStartEditAppointment(apt);
+                            setIsDaySlotsModalOpen(true);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-white hover:bg-sky-100 text-sky-800 border border-sky-300 text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          Endre &rarr;
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -755,10 +855,6 @@ export const CalendarView: React.FC = () => {
             const isTherapistInactive = isTherapistOnLeave(selectedTherapist, dateStr);
             const dateHoliday = isDateInHoliday(dateStr, therapistHolidays);
             
-            const availability = (workingHours && !isTherapistInactive) 
-              ? getDayAvailability(dateStr, workingHours, therapistAppointments, therapistHolidays)
-              : { total: 0, available: 0, booked: 0, status: 'closed' as const };
-
             const myAppointmentsToday = isClient
               ? clientAppointments.filter(a => a.date === dateStr)
               : [];
@@ -769,19 +865,13 @@ export const CalendarView: React.FC = () => {
               : [];
             const hasTherapistAppointments = therapistAppointmentsToday.length > 0;
 
-            let statusColor = 'bg-slate-50 text-slate-400 border-transparent';
+            let statusColor = 'bg-white text-slate-800 border-slate-200 hover:border-slate-300';
             if (hasMyAppointment) {
               statusColor = 'bg-sky-50/80 text-sky-950 border-sky-400 ring-2 ring-sky-500/60 shadow-xs hover:border-sky-500';
             } else if (hasTherapistAppointments) {
               statusColor = 'bg-sky-50/80 text-sky-950 border-sky-300 ring-1 ring-sky-400/50 shadow-2xs hover:border-sky-500';
             } else if (dateHoliday) {
               statusColor = 'bg-amber-50/50 text-amber-900 border-amber-200/80 hover:border-amber-300';
-            } else if (availability.status === 'fully_booked') {
-              statusColor = 'bg-rose-50 text-rose-900 border-rose-300';
-            } else if (availability.status === 'partially_booked') {
-              statusColor = 'bg-sky-50/50 text-slate-800 border-sky-200 hover:border-sky-300';
-            } else if (availability.status === 'all_available') {
-              statusColor = 'bg-white text-slate-800 border-slate-200 hover:border-slate-300';
             }
 
             return (
@@ -801,7 +891,7 @@ export const CalendarView: React.FC = () => {
                     {format(day, 'd')}
                   </span>
 
-                  {/* Fargekodeprikk, Ferie-ikon eller Kundens time-indikator */}
+                  {/* Avtale-indikator, Ferie-ikon eller Permisjon-ikon */}
                   {hasMyAppointment ? (
                     <span className="w-2.5 h-2.5 rounded-full bg-sky-600 ring-2 ring-sky-300 shadow-xs flex-shrink-0" title={`Du har ${myAppointmentsToday.length} avtalt time denne dagen`}></span>
                   ) : hasTherapistAppointments ? (
@@ -810,16 +900,10 @@ export const CalendarView: React.FC = () => {
                     <Palmtree className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 text-amber-600" />
                   ) : isTherapistInactive ? (
                     <UserX className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-600" />
-                  ) : availability.status === 'all_available' ? (
-                    <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-500 shadow-xs" title="Alle timer ledige"></span>
-                  ) : availability.status === 'partially_booked' ? (
-                    <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-sky-500 shadow-xs" title={`${availability.available} av ${availability.total} ledige`}></span>
-                  ) : availability.status === 'fully_booked' ? (
-                    <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-rose-500 shadow-xs" title="Fullbooket (0 ledige)"></span>
                   ) : null}
                 </div>
 
-                {/* Tallvisning for tilgjengelighet, ferie eller kundens avtale */}
+                {/* Visning av avtaler for dagen */}
                 <div className="mt-1 w-full flex justify-center sm:justify-start">
                   {hasMyAppointment ? (
                     <span className="inline-flex items-center gap-0.5 px-1 sm:px-1.5 py-0.2 rounded text-[9px] sm:text-[10px] font-extrabold bg-sky-600 text-white shadow-2xs" title={`Din avtalte time: kl. ${myAppointmentsToday[0].startTime}`}>
@@ -852,20 +936,6 @@ export const CalendarView: React.FC = () => {
                       <UserX className="w-2.5 h-2.5 text-amber-600 flex-shrink-0" />
                       <span className="truncate max-w-[45px] sm:max-w-[65px]">Permisjon</span>
                     </span>
-                  ) : availability.status === 'partially_booked' ? (
-                    <span className="inline-flex items-center px-1 sm:px-1.5 py-0.2 rounded text-[9px] sm:text-[11px] font-bold font-mono bg-sky-100 text-sky-800 border border-sky-200">
-                      {availability.available}/{availability.total}
-                      <span className="hidden md:inline font-sans font-medium text-[10px] ml-1">ledig</span>
-                    </span>
-                  ) : availability.status === 'fully_booked' ? (
-                    <span className="inline-flex items-center px-1 sm:px-1.5 py-0.2 rounded text-[9px] sm:text-[11px] font-bold font-mono bg-rose-200 text-rose-800 border border-rose-300">
-                      0/{availability.total}
-                      <span className="hidden md:inline font-sans font-medium text-[10px] ml-1">fullt</span>
-                    </span>
-                  ) : availability.status === 'closed' ? (
-                    <span className="hidden sm:inline text-[10px] text-slate-400 font-medium">
-                      Stengt
-                    </span>
                   ) : null}
                 </div>
               </button>
@@ -874,18 +944,15 @@ export const CalendarView: React.FC = () => {
         </div>
       </div>
 
-      {/* POPUP-VINDU (MODAL): LEDIGE TIMER FOR VALGT DATO */}
+      {/* POPUP-VINDU (MODAL): DAGENS AVTALER OG BESTILLING AV TIME */}
       {isDaySlotsModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="relative w-full max-w-lg bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 p-4 sm:p-6 max-h-[88vh] flex flex-col">
+          <div className="relative w-full max-w-lg bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 p-3.5 sm:p-5 max-h-[92vh] flex flex-col">
             
             {/* Modal Header */}
-            <div className="flex items-start justify-between pb-3.5 border-b border-slate-100">
+            <div className="flex items-start justify-between pb-2.5 border-b border-slate-100">
               <div>
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full border border-sky-200">
-                    Ledige timer
-                  </span>
                   {isTherapistOnLeave(selectedTherapist, selectedDateStr) ? (
                     <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
                       <UserX className="w-3 h-3 text-amber-700" />
@@ -896,19 +963,31 @@ export const CalendarView: React.FC = () => {
                       <Palmtree className="w-3 h-3 text-amber-600" />
                       Ferie / fravær
                     </span>
-                  ) : (
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                      {daySlots.filter(s => s.isAvailable).length} ledige
-                    </span>
-                  )}
+                  ) : null}
                 </div>
                 <h3 className="text-base sm:text-lg font-extrabold text-slate-900 capitalize">
                   {format(selectedDate, 'EEEE d. MMMM yyyy', { locale: nb })}
                 </h3>
-                <p className="text-xs font-semibold text-slate-700 mt-0.5 flex items-center gap-1">
-                  <User className="w-3.5 h-3.5 text-sky-600" />
-                  <span>{formatTherapistName(selectedTherapist?.displayName)}</span>
-                </p>
+
+                {/* Behandlervelger med nedtrekksmeny (forvalgt for innlogget behandler) */}
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-sky-600 flex-shrink-0" />
+                  <div className="relative inline-flex items-center">
+                    <select
+                      value={selectedTherapistId}
+                      onChange={(e) => handleTherapistChange(e.target.value)}
+                      className="appearance-none bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-lg pl-2 pr-7 py-1 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer transition-colors shadow-2xs"
+                      aria-label="Velg behandler"
+                    >
+                      {therapists.map(t => (
+                        <option key={t.uid} value={t.uid}>
+                          {formatTherapistName(t.displayName)} {t.uid === currentUser?.uid ? '(deg)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-1.5 pointer-events-none" />
+                  </div>
+                </div>
               </div>
 
               <button
@@ -920,66 +999,121 @@ export const CalendarView: React.FC = () => {
               </button>
             </div>
 
-            {/* Liste over tider */}
-            <div className="mt-3.5 flex-1 overflow-y-auto space-y-2 pr-0.5 min-h-[160px]">
+            {/* Modal Body: Avtalte timer og Bestillingsskjema */}
+            <div className="mt-2.5 flex-1 overflow-y-auto space-y-2.5 sm:space-y-3 pr-1 min-h-[160px]">
+              
+              {/* Avtalte timer for denne dagen */}
               {!isClient && (
-                <div className="mb-3 space-y-2 pb-3 border-b border-slate-100">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                      <CalendarIcon className="w-3.5 h-3.5 text-sky-600" />
-                      <span>Avtalte timer ({therapistAppointments.filter(a => a.date === selectedDateStr && a.status !== 'cancelled').length})</span>
-                    </h4>
-                    <button
-                      onClick={() => {
-                        setIsDaySlotsModalOpen(false);
-                        setSelectedSlot({
-                          id: `custom_${selectedDateStr}_10:00`,
-                          startTime: '10:00',
-                          endTime: '10:45',
-                          date: selectedDateStr,
-                          isAvailable: true
-                        });
-                        setOriginalSlotBeforeSuggestion(null);
-                        setBookingSlotType(slotTypeOptions[0]);
-                        if (clients.length > 0 && !selectedClientId) {
-                          setSelectedClientId(clients[0].uid);
-                        }
-                        setIsBookingModalOpen(true);
-                      }}
-                      className="px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>Avtal ny time</span>
-                    </button>
-                  </div>
+                <div className="space-y-1.5 pb-2.5 border-b border-slate-100">
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <CalendarIcon className="w-3.5 h-3.5 text-sky-600" />
+                    <span>Avtalte timer ({therapistAppointments.filter(a => a.date === selectedDateStr && a.status !== 'cancelled').length})</span>
+                  </h4>
 
                   {therapistAppointments.filter(a => a.date === selectedDateStr && a.status !== 'cancelled').length > 0 ? (
-                    <div className="space-y-1.5">
-                      {therapistAppointments.filter(a => a.date === selectedDateStr && a.status !== 'cancelled').map(apt => (
-                        <div key={apt.id} className="p-3 rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-between text-xs">
-                          <div>
-                            <p className="font-extrabold text-slate-900 font-mono">
-                              kl. {apt.startTime} - {apt.endTime} &bull; <span className="font-sans font-bold text-sky-800">{apt.clientName}</span>
-                            </p>
-                            <p className="text-[11px] text-slate-500">
-                              {apt.isOnline ? 'Online videomøte' : 'Fysisk oppmøte'} {apt.notes ? `• Notat: ${apt.notes}` : ''}
-                            </p>
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-0.5">
+                      {therapistAppointments.filter(a => a.date === selectedDateStr && a.status !== 'cancelled').map(apt => {
+                        const isEditingThis = editingAppointmentId === apt.id;
+                        const isCancellingThis = cancellingAptId === apt.id;
+
+                        return (
+                          <div 
+                            key={apt.id} 
+                            className={`p-2 rounded-xl border transition-all text-xs ${
+                              isEditingThis
+                                ? 'bg-amber-50/80 border-amber-300 ring-2 ring-amber-400/70'
+                                : 'bg-sky-50/70 border-sky-200 hover:bg-sky-50'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div 
+                                className="cursor-pointer flex-1 min-w-0"
+                                onClick={() => handleStartEditAppointment(apt)}
+                                title="Klikk for å endre denne avtalen"
+                              >
+                                <p className="font-extrabold text-slate-900 font-mono flex items-center gap-1.5 flex-wrap">
+                                  <span>kl. {apt.startTime} - {apt.endTime}</span>
+                                  <span className="font-sans font-bold text-sky-800 truncate">&bull; {apt.clientName}</span>
+                                  {isEditingThis && (
+                                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded border border-amber-300">
+                                      Redigerer
+                                    </span>
+                                  )}
+                                </p>
+                                <p className="text-[11px] text-slate-500 truncate">
+                                  {apt.isOnline ? 'Online videomøte' : 'Fysisk oppmøte'} {apt.notes ? `• ${apt.notes}` : ''}
+                                </p>
+                              </div>
+
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                <span className="font-semibold text-slate-600 font-mono text-[11px] mr-1 hidden sm:inline">
+                                  kr {apt.price},-
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => isEditingThis ? handleCancelEditAppointment() : handleStartEditAppointment(apt)}
+                                  className={`px-2 py-1 rounded-lg text-[11px] font-semibold border flex items-center gap-1 transition-colors cursor-pointer ${
+                                    isEditingThis
+                                      ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                      : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                                  }`}
+                                  title="Endre avtalen"
+                                >
+                                  <Edit2 className="w-3 h-3 text-sky-600" />
+                                  <span>{isEditingThis ? 'Avbryt' : 'Endre'}</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setCancellingAptId(isCancellingThis ? null : apt.id)}
+                                  className="px-2 py-1 rounded-lg text-[11px] font-semibold border bg-white hover:bg-rose-50 text-rose-700 border-rose-200 flex items-center gap-1 transition-colors cursor-pointer"
+                                  title="Avlys avtale"
+                                >
+                                  <Trash2 className="w-3 h-3 text-rose-600" />
+                                  <span>Avlys</span>
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Bekreftelse for avlysning */}
+                            {isCancellingThis && (
+                              <div className="mt-2 pt-1.5 border-t border-rose-200 bg-rose-50/90 -mx-2 -mb-2 p-2 rounded-b-xl flex items-center justify-between gap-2">
+                                <p className="text-[11px] font-bold text-rose-900 truncate">
+                                  Avlyse timen for {apt.clientName}?
+                                </p>
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => setCancellingAptId(null)}
+                                    className="px-2 py-0.5 rounded text-[11px] font-semibold bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 cursor-pointer"
+                                  >
+                                    Nei
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCancelAppointment(apt.id)}
+                                    className="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-600 text-white hover:bg-rose-700 shadow-2xs cursor-pointer"
+                                  >
+                                    Ja, avlys
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                          <span className="font-semibold text-slate-600 font-mono text-[11px]">
-                            kr {apt.price},-
-                          </span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
-                    <p className="text-xs text-slate-400 italic bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                    <p className="text-xs text-slate-400 italic bg-slate-50 py-1.5 px-2.5 rounded-lg border border-slate-200">
                       Ingen avtalte timer denne dagen ennå.
                     </p>
                   )}
                 </div>
               )}
+
+              {/* Informasjon hvis klienten har avtale hos en annen behandler denne dagen */}
               {isClient && appointments.filter(a => a.clientId === currentUser?.uid && a.date === selectedDateStr && a.status === 'confirmed' && a.therapistId !== selectedTherapistId).length > 0 && (
-                <div className="p-3 rounded-xl bg-sky-50 border border-sky-300 text-xs text-sky-950 space-y-1.5">
+                <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-300 text-xs text-sky-950 space-y-1">
                   <div className="flex items-center gap-1.5 font-bold">
                     <CheckCircle2 className="w-4 h-4 text-sky-600" />
                     <span>Du har avtalt time denne dagen hos en annen behandler:</span>
@@ -1002,464 +1136,234 @@ export const CalendarView: React.FC = () => {
                 </div>
               )}
 
-              {isTherapistOnLeave(selectedTherapist, selectedDateStr) ? (
-                <div className="text-center py-8 px-4">
-                  <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-3 border border-amber-200">
-                    <UserX className="w-6 h-6" />
-                  </div>
-                  <h4 className="font-bold text-slate-800 text-sm sm:text-base">Behandler er i permisjon</h4>
-                  <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                    {formatTherapistName(selectedTherapist?.displayName)} er i permisjon {selectedTherapist?.leaveStartDate && selectedTherapist?.leaveEndDate ? `i perioden ${format(new Date(selectedTherapist.leaveStartDate), 'd. MMM', { locale: nb })} – ${format(new Date(selectedTherapist.leaveEndDate), 'd. MMM yyyy', { locale: nb })}` : 'for øyeblikket'}. Det kan ikke bestilles timer denne dagen.
-                  </p>
+              {/* Varsel ved permisjon eller ferie */}
+              {isTherapistOnLeave(selectedTherapist, selectedDateStr) && (
+                <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
+                  <UserX className="w-4 h-4 text-amber-700 flex-shrink-0" />
+                  <span>Behandler er registrert i permisjon på denne datoen.</span>
                 </div>
-              ) : isDateInHoliday(selectedDateStr, therapistHolidays) ? (
-                (() => {
-                  const holiday = isDateInHoliday(selectedDateStr, therapistHolidays)!;
-                  return (
-                    <div className="text-center py-8 px-4">
-                      <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-3 border border-amber-200">
-                        <Palmtree className="w-6 h-6" />
-                      </div>
-                      <h4 className="font-bold text-slate-800 text-sm sm:text-base">Ferie / fravær: {holiday.title}</h4>
-                      <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                        {formatTherapistName(selectedTherapist?.displayName)} har registrert fravær i perioden{' '}
-                        <strong className="text-slate-700">
-                          {format(new Date(holiday.startDate), 'd. MMM', { locale: nb })} – {format(new Date(holiday.endDate), 'd. MMM yyyy', { locale: nb })}
-                        </strong>.
-                      </p>
-                      <p className="text-xs text-slate-400 mt-2">Det er ikke mulig å bestille time denne dagen.</p>
-                    </div>
-                  );
-                })()
-              ) : daySlots.length === 0 ? (
-                <div className="text-center py-10 text-slate-400">
-                  <CalendarIcon className="w-10 h-10 mx-auto mb-2 opacity-30 text-slate-400" />
-                  <p className="font-semibold text-sm text-slate-600">Ingen tilgjengelige timer denne dagen.</p>
-                  <p className="text-xs text-slate-400 mt-1">Prøv en annen dag eller bytt behandler.</p>
-                </div>
-              ) : (
-                daySlots.map((slot) => {
-                  const isAvailable = slot.isAvailable;
-                  const apt = slot.appointment;
-                  const isMyAppointment = isClient && apt && apt.clientId === currentUser?.uid;
-
-                  if (isMyAppointment) {
-                    return (
-                      <div
-                        key={slot.id}
-                        className="p-3.5 rounded-xl sm:rounded-2xl border-2 border-sky-400 bg-sky-50 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="w-3.5 h-3.5 rounded-full bg-sky-600 ring-2 ring-sky-300 flex-shrink-0 mt-1" />
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-extrabold text-slate-900 text-sm sm:text-base font-mono">
-                                {slot.startTime} - {slot.endTime}
-                              </span>
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-600 text-white shadow-2xs">
-                                <CheckCircle2 className="w-3 h-3 text-sky-200" />
-                                Din avtalte time
-                              </span>
-                            </div>
-                            <p className="text-xs text-slate-600 mt-0.5 flex flex-wrap items-center gap-1.5">
-                              <span className="font-semibold text-slate-800">
-                                {getTherapistDisplayName(apt?.therapistId, apt?.therapistName)}
-                              </span>
-                              <span>&bull;</span>
-                              <span>{apt?.isOnline ? 'Online videomøte' : 'Fysisk oppmøte'}</span>
-                              <span>&bull;</span>
-                              <span className="font-semibold text-slate-700">kr {apt?.price},-</span>
-                            </p>
-                            {apt?.notes && (
-                              <p className="text-[11px] text-slate-500 italic mt-0.5">
-                                Notat: {apt.notes}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        {apt?.isOnline && apt?.meetingLink && (
-                          <a
-                            href={apt.meetingLink}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="self-start sm:self-center px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-all flex items-center gap-1 flex-shrink-0"
-                          >
-                            <Video className="w-3.5 h-3.5" />
-                            <span>Åpne møte</span>
-                            <ExternalLink className="w-3 h-3 ml-0.5 opacity-80" />
-                          </a>
-                        )}
-                      </div>
-                    );
-                  }
-
-                  let clientDisplay = apt ? apt.clientName : '';
-                  if (apt && currentUser?.role === 'admin' && !currentUser.permissions?.canViewClientName) {
-                    clientDisplay = `Klient #${apt.clientNumber}`;
-                  }
-
-                  return (
-                    <div
-                      key={slot.id}
-                      className={`p-3 rounded-xl sm:rounded-2xl border flex items-center justify-between transition-all ${
-                        isAvailable
-                          ? 'bg-emerald-50/40 border-emerald-200 hover:border-emerald-300 hover:bg-emerald-50/70'
-                          : 'bg-rose-50/30 border-rose-200 opacity-80'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-3 h-3 rounded-full flex-shrink-0 ${
-                          isAvailable ? 'bg-emerald-500 shadow-xs' : 'bg-rose-500'
-                        }`} />
-                        <div>
-                          <span className="font-bold text-slate-900 text-sm sm:text-base font-mono">
-                            {slot.startTime} - {slot.endTime}
-                          </span>
-                          <p className="text-xs">
-                            {isAvailable ? (
-                              <span className="text-emerald-700 font-semibold">Ledig for bestilling</span>
-                            ) : (
-                              <span className="text-rose-700 font-medium">
-                                Opptatt {apt && (currentUser?.role === 'hovedadmin' || currentUser?.role === 'admin') ? `(${clientDisplay})` : ''}
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-
-                      {isAvailable && (
-                        <button
-                          onClick={() => handleOpenBooking(slot)}
-                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs sm:text-sm font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer flex-shrink-0"
-                        >
-                          Bestill
-                        </button>
-                      )}
-                    </div>
-                  );
-                })
               )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
-              <span>Standard varighet: 45 minutter</span>
-              <button
-                onClick={() => setIsDaySlotsModalOpen(false)}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold cursor-pointer"
-              >
-                Lukk
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* BESTILLINGS-MODAL */}
-      {isBookingModalOpen && selectedSlot && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 sm:p-6 max-h-[92vh] overflow-y-auto">
-            
-            <button
-              onClick={() => setIsBookingModalOpen(false)}
-              className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="mb-4">
-              <h3 className="text-lg font-bold text-slate-900">Bekreft timebestilling</h3>
-              <p className="text-xs text-slate-500 flex items-center flex-wrap gap-1.5 mt-0.5">
-                <span>{format(new Date(selectedSlot.date), 'EEEE d. MMMM', { locale: nb })} kl. <strong className="text-slate-800">{selectedSlot.startTime}</strong></span>
-                {lunchSuggestionStatus === 'accepted' && acceptedSlotTime && (
-                  <span className="text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-md">
-                    ✓ Ny tid: kl. {acceptedSlotTime.start} – {acceptedSlotTime.end}
-                  </span>
-                )}
-              </p>
-              <p className="text-xs font-semibold text-slate-700 mt-1 flex items-center gap-1">
-                <User className="w-3.5 h-3.5 text-sky-600" />
-                <span>{formatTherapistName(selectedTherapist?.displayName)}</span>
-              </p>
-            </div>
-
-            <div className="space-y-3.5">
-              
-              {/* Velg klient hvis admin */}
-              {currentUser?.role !== 'client' && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                    Klient
-                  </label>
-                  <select
-                    value={selectedClientId}
-                    onChange={(e) => setSelectedClientId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-medium focus:outline-none"
-                  >
-                    {clients.map(c => {
-                      const name = (currentUser?.role === 'admin' && !currentUser?.permissions?.canViewClientName)
-                        ? `Klient #${c.customerNumber}`
-                        : `${c.displayName} (#${c.customerNumber})`;
-                      return (
-                        <option key={c.uid} value={c.uid}>
-                          {name}
-                        </option>
-                      );
-                    })}
-                  </select>
+              {isDateInHoliday(selectedDateStr, therapistHolidays) && (
+                <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
+                  <Palmtree className="w-4 h-4 text-amber-700 flex-shrink-0" />
+                  <span>Behandler har ferie/fravær på denne datoen ({isDateInHoliday(selectedDateStr, therapistHolidays)?.title}).</span>
                 </div>
               )}
 
-              {/* Time-type */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                  Varighet & type
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {slotTypeOptions.map((st) => {
-                    const isSel = bookingSlotType.type === st.type;
-                    return (
-                      <button
-                        key={st.type}
-                        type="button"
-                        onClick={() => handleSlotTypeChange(st)}
-                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                          isSel ? 'border-sky-600 bg-sky-50 ring-1 ring-sky-500' : 'border-slate-200 bg-white hover:bg-slate-50'
-                        }`}
-                      >
-                        <p className="text-xs font-bold text-slate-800 truncate">{st.title}</p>
-                        <p className="text-[10px] text-slate-500">{st.durationMinutes} min</p>
-                        <p className="text-xs font-semibold text-sky-700 mt-0.5 whitespace-nowrap">kr {st.price},-</p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* 1. Hvis brukeren har godtatt et forslag om flytting */}
-              {lunchSuggestionStatus === 'accepted' && acceptedSlotTime && (
-                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-xs shadow-xs space-y-1.5">
-                  <div className="flex items-start gap-2.5">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-emerald-900 text-sm">
-                        Forslag godtatt!
-                      </p>
-                      <p className="text-emerald-800 mt-0.5 leading-relaxed">
-                        Timen er flyttet til <strong className="text-emerald-950 font-extrabold">kl. {acceptedSlotTime.start} – {acceptedSlotTime.end}</strong> ({acceptedSlotTime.label}). Den gjennomføres sammenhengende uten pause.
-                      </p>
-                      <div className="pt-1.5 flex items-center justify-between">
-                        <button
-                          type="button"
-                          onClick={handleRevertSuggestion}
-                          className="text-xs font-semibold text-emerald-700 hover:text-emerald-900 underline inline-flex items-center gap-1 cursor-pointer"
-                        >
-                          Angre og gå tilbake til kl. {originalSlotBeforeSuggestion?.startTime || 'opprinnelig tid'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* 2. Hvis brukeren har avslått forslaget og valgt å beholde opprinnelig tid */}
-              {lunchCollision.collides && lunchCollision.lunchBreak && lunchSuggestionStatus === 'declined' && (
-                <div className="p-3.5 rounded-xl bg-slate-100 border border-slate-300 text-slate-800 text-xs shadow-xs space-y-1.5">
-                  <div className="flex items-start gap-2.5">
-                    <Clock className="w-4 h-4 text-slate-600 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-slate-900">
-                        Forslag avslått – beholder kl. {selectedSlot.startTime}
-                      </p>
-                      <p className="text-slate-600 mt-0.5 leading-relaxed">
-                        Timen gjennomføres som oppsatt med pause under {lunchCollision.lunchBreak.title || 'lunsj'} (kl. {lunchCollision.lunchBreak.start} – {lunchCollision.lunchBreak.end}). Total tidsramme blir {bookingSlotType.durationMinutes + lunchCollision.lunchDurationMinutes} minutter.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setLunchSuggestionStatus('pending')}
-                        className="mt-1 text-xs font-semibold text-sky-700 hover:text-sky-900 underline inline-flex items-center gap-1 cursor-pointer"
-                      >
-                        Vis forslag om sammenhengende time på nytt
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* 3. Uavklart forslag: Viser valg om å enten godta sammenhengende time eller avslå */}
-              {lunchCollision.collides && lunchCollision.lunchBreak && lunchSuggestionStatus === 'pending' && (
-                <div className="p-3.5 sm:p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs space-y-3 shadow-xs">
-                  <div className="flex items-start gap-2.5">
-                    <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                    <div className="min-w-0 flex-1">
-                      <p className="font-bold text-amber-900 text-sm">
-                        Timen blir avbrutt av {lunchCollision.lunchBreak.title || 'lunsjpause'} ({lunchCollision.lunchBreak.start} – {lunchCollision.lunchBreak.end})
-                      </p>
-                      <p className="text-amber-800 mt-1 leading-relaxed">
-                        En {bookingSlotType.title.toLowerCase()} ({bookingSlotType.durationMinutes} min) kl. {selectedSlot.startTime} vil bli avbrutt av lunsjen. 
-                        Velg om du vil <strong>godta en sammenhengende time</strong> eller <strong>avslå og beholde opprinnelig tid</strong>:
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Valgknapper: Godta eller avslå */}
-                  <div className="pt-2 border-t border-amber-200 space-y-2">
-                    {/* Forslag etter lunsj */}
-                    {alternativeSlots.after && (
-                      <button
-                        type="button"
-                        onClick={() => handleAcceptSuggestion(alternativeSlots.after!, 'Etter lunsj')}
-                        className="w-full p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs text-left transition-all flex items-center justify-between shadow-xs cursor-pointer gap-2"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Check className="w-4 h-4 text-emerald-200 flex-shrink-0" />
-                          <div className="min-w-0">
-                            <span className="font-bold block text-white text-xs">Godta forslag: Etter lunsj</span>
-                            <span className="text-[11px] text-emerald-100 block truncate">
-                              kl. {alternativeSlots.after.startTime} – {alternativeSlots.after.endTime} (sammenhengende)
-                            </span>
-                          </div>
-                        </div>
-                        <span className="text-[11px] font-bold bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-lg text-white flex-shrink-0 whitespace-nowrap">
-                          Godta & flytt &rarr;
-                        </span>
-                      </button>
-                    )}
-
-                    {/* Forslag før lunsj */}
-                    {alternativeSlots.before && (
-                      <button
-                        type="button"
-                        onClick={() => handleAcceptSuggestion(alternativeSlots.before!, 'Før lunsj')}
-                        className="w-full p-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs text-left transition-all flex items-center justify-between shadow-xs cursor-pointer gap-2"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Check className="w-4 h-4 text-sky-200 flex-shrink-0" />
-                          <div className="min-w-0">
-                            <span className="font-bold block text-white text-xs">Godta forslag: Før lunsj</span>
-                            <span className="text-[11px] text-sky-100 block truncate">
-                              kl. {alternativeSlots.before.startTime} – {alternativeSlots.before.endTime} (sammenhengende)
-                            </span>
-                          </div>
-                        </div>
-                        <span className="text-[11px] font-bold bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-lg text-white flex-shrink-0 whitespace-nowrap">
-                          Godta & flytt &rarr;
-                        </span>
-                      </button>
-                    )}
-
-                    {/* Avslå forslag og behold opprinnelig tid */}
+              {/* Bestillingsskjema / Endringsskjema */}
+              <div className="space-y-2.5 pt-0.5">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-sky-600" />
+                    <span>{editingAppointmentId ? 'Endre avtale' : 'Avtal time'}</span>
+                  </h4>
+                  {editingAppointmentId && (
                     <button
                       type="button"
-                      onClick={() => setLunchSuggestionStatus('declined')}
-                      className="w-full p-2.5 rounded-xl bg-white hover:bg-amber-100/70 border border-amber-300 text-amber-950 font-semibold text-xs transition-all flex items-center justify-between cursor-pointer gap-2"
+                      onClick={handleCancelEditAppointment}
+                      className="text-[11px] font-semibold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded border border-amber-200 transition-colors cursor-pointer"
                     >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <X className="w-4 h-4 text-amber-700 flex-shrink-0" />
-                        <div className="min-w-0 text-left">
-                          <span className="font-bold block text-amber-950">Avslå forslag – behold kl. {selectedSlot.startTime}</span>
-                          <span className="text-[11px] text-amber-800 block truncate">
-                            Timen avbrytes av lunsj ({lunchCollision.lunchDurationMinutes} min pause)
-                          </span>
-                        </div>
-                      </div>
-                      <span className="text-[11px] font-medium text-amber-800 bg-amber-100 border border-amber-200 px-2 py-1 rounded-lg flex-shrink-0 whitespace-nowrap">
-                        Avslå
-                      </span>
+                      Avbryt endring
                     </button>
+                  )}
+                </div>
 
-                    {!alternativeSlots.before && !alternativeSlots.after && (
-                      <p className="text-xs text-amber-700 italic">
-                        Ingen andre sammenhengende timer er ledige før eller etter lunsj denne dagen.
-                      </p>
-                    )}
+                {/* Velg klient hvis admin */}
+                {currentUser?.role !== 'client' && (
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-0.5">
+                      Klient
+                    </label>
+                    <select
+                      value={selectedClientId}
+                      onChange={(e) => setSelectedClientId(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-medium focus:outline-none bg-white"
+                    >
+                      {clients.map(c => {
+                        const name = (currentUser?.role === 'admin' && !currentUser?.permissions?.canViewClientName)
+                          ? `Klient #${c.customerNumber}`
+                          : `${c.displayName} (#${c.customerNumber})`;
+                        return (
+                          <option key={c.uid} value={c.uid}>
+                            {name}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                )}
+
+                {/* Start- og sluttid */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-0.5">
+                      Starttidspunkt
+                    </label>
+                    <input
+                      type="time"
+                      value={bookingStartTime}
+                      onChange={(e) => handleBookingStartTimeChange(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 font-mono text-sm font-extrabold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-0.5">
+                      Sluttid (fritt redigerbar)
+                    </label>
+                    <input
+                      type="time"
+                      value={bookingEndTime}
+                      onChange={(e) => handleBookingEndTimeChange(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 font-mono text-sm font-extrabold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
                   </div>
                 </div>
-              )}
 
-              {/* Møteform */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                  Møteform
-                </label>
-                <div className="grid grid-cols-2 gap-2">
+                {/* Valg av varighet tilpasset Klinikk-oppsettet (uten 'Forslag til sluttid:'-tekst) */}
+                <div className="grid grid-cols-3 gap-1.5 pt-0.5">
                   <button
                     type="button"
-                    onClick={() => setIsOnlineMeeting(false)}
-                    className={`p-2.5 rounded-xl border flex items-center gap-2 transition-all ${
-                      !isOnlineMeeting ? 'border-sky-600 bg-sky-50 text-sky-900' : 'border-slate-200 text-slate-600'
+                    onClick={() => applyDurationSuggestion('single')}
+                    className={`py-1.5 px-2 rounded-lg border text-center transition-all cursor-pointer ${
+                      bookingSuggestedType === 'single'
+                        ? 'border-sky-600 bg-sky-50 text-sky-900 ring-2 ring-sky-500 font-bold shadow-2xs'
+                        : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium'
                     }`}
                   >
-                    <MapPin className="w-4 h-4 text-sky-600" />
-                    <span className="text-xs font-bold">Fysisk møte</span>
+                    <span className="block text-xs font-bold">Enkelttime ({clinicSlotMinutes}m)</span>
+                    <span className="block text-[10px] text-sky-700 font-semibold mt-0.5">kr {workingHours?.prices?.single ?? 950},-</span>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => setIsOnlineMeeting(true)}
-                    className={`p-2.5 rounded-xl border flex items-center gap-2 transition-all ${
-                      isOnlineMeeting ? 'border-sky-600 bg-sky-50 text-sky-900' : 'border-slate-200 text-slate-600'
+                    onClick={() => applyDurationSuggestion('double')}
+                    className={`py-1.5 px-2 rounded-lg border text-center transition-all cursor-pointer ${
+                      bookingSuggestedType === 'double'
+                        ? 'border-sky-600 bg-sky-50 text-sky-900 ring-2 ring-sky-500 font-bold shadow-2xs'
+                        : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium'
                     }`}
                   >
-                    <Video className="w-4 h-4 text-sky-600" />
-                    <span className="text-xs font-bold">Online møte</span>
+                    <span className="block text-xs font-bold">Dobbelttime ({clinicSlotMinutes * 2}m)</span>
+                    <span className="block text-[10px] text-sky-700 font-semibold mt-0.5">kr {workingHours?.prices?.double ?? 1800},-</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => applyDurationSuggestion('triple')}
+                    className={`py-1.5 px-2 rounded-lg border text-center transition-all cursor-pointer ${
+                      bookingSuggestedType === 'triple'
+                        ? 'border-sky-600 bg-sky-50 text-sky-900 ring-2 ring-sky-500 font-bold shadow-2xs'
+                        : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium'
+                    }`}
+                  >
+                    <span className="block text-xs font-bold">Trippeltime ({clinicSlotMinutes * 3}m)</span>
+                    <span className="block text-[10px] text-sky-700 font-semibold mt-0.5">kr {workingHours?.prices?.triple ?? 2600},-</span>
                   </button>
                 </div>
-              </div>
 
-              {/* Notat */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                  Beskjed (valgfritt)
-                </label>
-                <textarea
-                  rows={2}
-                  value={bookingNotes}
-                  onChange={(e) => setBookingNotes(e.target.value)}
-                  placeholder="Kort beskjed til timen..."
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none"
-                />
-              </div>
+                {/* Varighet og pris */}
+                <div className="py-1.5 px-2.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="text-slate-400 font-semibold block text-[10px] uppercase">Varighet</span>
+                    <span className="font-bold text-slate-900 font-mono">
+                      {calculateDurationMinutes(bookingStartTime, bookingEndTime)} minutter
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-slate-400 font-semibold block text-[10px] uppercase">Pris</span>
+                    <span className="font-extrabold text-emerald-700 text-sm">
+                      kr {bookingPrice},-
+                    </span>
+                  </div>
+                </div>
 
-              {/* Knapper */}
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  disabled={isSubmittingBooking}
-                  onClick={() => setIsBookingModalOpen(false)}
-                  className="w-1/3 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
-                >
-                  Avbryt
-                </button>
-                <button
-                  type="button"
-                  disabled={isSubmittingBooking}
-                  onClick={handleConfirmBooking}
-                  className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
-                    lunchSuggestionStatus === 'accepted'
-                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
-                      : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/20'
-                  }`}
-                >
-                  {isSubmittingBooking ? (
-                    <>
-                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Lagrer bestilling...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-4 h-4 flex-shrink-0" />
-                      <span>
-                        {lunchSuggestionStatus === 'accepted' && acceptedSlotTime
-                          ? `Bekreft time (kl. ${acceptedSlotTime.start} – ${acceptedSlotTime.end})`
-                          : lunchCollision.collides && lunchSuggestionStatus === 'declined'
-                            ? `Bekreft time (kl. ${selectedSlot.startTime}, m/lunsjpause)`
-                            : `Bekreft time (kl. ${selectedSlot.startTime})`}
-                      </span>
-                    </>
-                  )}
-                </button>
+                {/* Møteform */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-0.5">
+                    Møteform
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsOnlineMeeting(false)}
+                      className={`py-1.5 px-2 rounded-lg border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        !isOnlineMeeting ? 'border-sky-600 bg-sky-50 text-sky-900 font-bold' : 'border-slate-200 text-slate-600'
+                      }`}
+                    >
+                      <MapPin className="w-3.5 h-3.5 text-sky-600" />
+                      <span className="text-xs">Fysisk møte</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsOnlineMeeting(true)}
+                      className={`py-1.5 px-2 rounded-lg border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        isOnlineMeeting ? 'border-sky-600 bg-sky-50 text-sky-900 font-bold' : 'border-slate-200 text-slate-600'
+                      }`}
+                    >
+                      <Video className="w-3.5 h-3.5 text-sky-600" />
+                      <span className="text-xs">Online møte</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Notat */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-0.5">
+                    Beskjed (valgfritt)
+                  </label>
+                  <input
+                    type="text"
+                    value={bookingNotes}
+                    onChange={(e) => setBookingNotes(e.target.value)}
+                    placeholder="Kort beskjed til timen..."
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs focus:outline-none bg-white"
+                  />
+                </div>
+
+                {/* Knapper */}
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={isSubmittingBooking}
+                    onClick={() => {
+                      setIsDaySlotsModalOpen(false);
+                      setEditingAppointmentId(null);
+                      setCancellingAptId(null);
+                    }}
+                    className="w-1/3 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    Avbryt
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSubmittingBooking || calculateDurationMinutes(bookingStartTime, bookingEndTime) <= 0}
+                    onClick={handleConfirmBooking}
+                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
+                      editingAppointmentId
+                        ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/20'
+                        : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/20'
+                    }`}
+                  >
+                    {isSubmittingBooking ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Lagrer...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4 flex-shrink-0" />
+                        <span>
+                          {editingAppointmentId 
+                            ? `Lagre endring (kl. ${bookingStartTime} – ${bookingEndTime})` 
+                            : `Bekreft time (kl. ${bookingStartTime} – ${bookingEndTime})`}
+                        </span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
               </div>
 
             </div>

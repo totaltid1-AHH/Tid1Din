@@ -124,6 +124,18 @@ function calculateEndTime(startTime: string, minutesToAdd: number = 45): string 
   return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
 }
 
+// Sikker datoformatering som unngår krasj ved ugyldige tidsverdier eller uventede formater
+function safeFormatDate(value: any, pattern: string, fallback: string = ''): string {
+  try {
+    if (!value) return fallback;
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return fallback;
+    return format(d, pattern, { locale: nb });
+  } catch {
+    return fallback;
+  }
+}
+
 export const JournalView: React.FC<JournalViewProps> = ({ 
   initialClientId,
   onNavigateToCalendar 
@@ -199,17 +211,24 @@ export const JournalView: React.FC<JournalViewProps> = ({
   }, []);
 
   const loadClients = async () => {
-    const users = await dbService.getUsers();
-    const clientList = users.filter(u => u.role === 'client');
-    setClients(clientList);
+    try {
+      const users = await dbService.getUsers();
+      const clientList = users.filter(u => u.role === 'client');
+      setClients(clientList);
 
-    if (clientList.length > 0) {
-      if (initialClientId) {
-        const found = clientList.find(c => c.uid === initialClientId);
-        setSelectedClient(found || clientList[0]);
-      } else if (!selectedClient) {
-        setSelectedClient(clientList[0]);
+      if (clientList.length > 0) {
+        if (initialClientId) {
+          const found = clientList.find(c => c.uid === initialClientId);
+          setSelectedClient(found || clientList[0]);
+        } else if (!selectedClient) {
+          setSelectedClient(clientList[0]);
+        }
+      } else {
+        setIsLoading(false);
       }
+    } catch (e) {
+      console.error('Feil ved innlasting av klienter:', e);
+      setIsLoading(false);
     }
   };
 
@@ -323,8 +342,8 @@ export const JournalView: React.FC<JournalViewProps> = ({
     entries.forEach(entry => {
       const linkedApt = entry.appointmentId ? appointments.find(a => a.id === entry.appointmentId) : null;
       if (!linkedApt) {
-        const d = entry.sessionDate || format(new Date(entry.createdAt), 'yyyy-MM-dd');
-        const t = entry.sessionTime || format(new Date(entry.createdAt), 'HH:mm');
+        const d = entry.sessionDate || safeFormatDate(entry.createdAt, 'yyyy-MM-dd');
+        const t = entry.sessionTime || safeFormatDate(entry.createdAt, 'HH:mm');
         const key = `entry_${entry.id}`;
         sessionMap.set(key, {
           key,
@@ -403,6 +422,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
   };
 
   const handleStartNew = () => {
+    if (!selectedClient) return;
     setEditingEntryId(null);
     setNoteContent('');
     setChangeNote('');
@@ -455,8 +475,8 @@ export const JournalView: React.FC<JournalViewProps> = ({
     setNoteContent(entry.decryptedContent);
     setChangeNote('');
     setSelectedAppointmentId(entry.appointmentId || '');
-    setSessionDate(entry.sessionDate || format(new Date(entry.createdAt), 'yyyy-MM-dd'));
-    setSessionTime(entry.sessionTime || format(new Date(entry.createdAt), 'HH:mm'));
+    setSessionDate(entry.sessionDate || safeFormatDate(entry.createdAt, 'yyyy-MM-dd'));
+    setSessionTime(entry.sessionTime || safeFormatDate(entry.createdAt, 'HH:mm'));
     setShouldBookNext(false);
     setIsComposerOpen(true);
 
@@ -626,7 +646,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
             `Avtalte neste time for ${selectedClient.displayName} den ${nextApt.date} kl. ${nextApt.startTime}`
           );
 
-          setSaveFeedback(`Journalnotat lagret & neste time er avtalt for ${format(new Date(nextDate + 'T12:00:00'), 'd. MMMM', { locale: nb })} kl. ${nextStartTime}!`);
+          setSaveFeedback(`Journalnotat lagret & neste time er avtalt for ${safeFormatDate(nextDate + 'T12:00:00', 'd. MMMM', nextDate)} kl. ${nextStartTime}!`);
         } else {
           setSaveFeedback('Nytt journalnotat ble lagret og kryptert!');
         }
@@ -687,7 +707,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
       setIsNewAppointmentModalOpen(false);
       setNewAptNotes('');
       await loadJournalsAndAppointments(selectedClient.uid);
-      setSaveFeedback(`Samtaletime lagt til for ${format(new Date(newAptDate + 'T12:00:00'), 'd. MMMM', { locale: nb })} kl. ${newAptTime} - ${finalEndTime}. Vises nå i kalenderen!`);
+      setSaveFeedback(`Samtaletime lagt til for ${safeFormatDate(newAptDate + 'T12:00:00', 'd. MMMM', newAptDate)} kl. ${newAptTime} - ${finalEndTime}. Vises nå i kalenderen!`);
       setTimeout(() => setSaveFeedback(null), 3500);
     } catch (err: any) {
       alert('Kunne ikke opprette timeavtale: ' + err.message);
@@ -752,8 +772,8 @@ export const JournalView: React.FC<JournalViewProps> = ({
             y = 20;
           }
 
-          const sessionDateStr = entry.sessionDate || format(new Date(entry.createdAt), 'yyyy-MM-dd');
-          const sessionTimeStr = entry.sessionTime || format(new Date(entry.createdAt), 'HH:mm');
+          const sessionDateStr = entry.sessionDate || safeFormatDate(entry.createdAt, 'yyyy-MM-dd');
+          const sessionTimeStr = entry.sessionTime || safeFormatDate(entry.createdAt, 'HH:mm');
 
           // Tittelbjelke for notat
           doc.setFillColor(241, 245, 249);
@@ -799,7 +819,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
 
   // Formatering for visning av journalnotat (Spørsmål 3: Fet tekst, overskrifter, punkter)
   const renderFormattedJournalContent = (content: string) => {
-    if (!content) return null;
+    if (!content || typeof content !== 'string') return null;
     const lines = content.split('\n');
 
     return (
@@ -1032,7 +1052,8 @@ export const JournalView: React.FC<JournalViewProps> = ({
             {canEdit && (
               <button
                 onClick={handleStartNew}
-                className="px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                disabled={!selectedClient}
+                className="px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Plus className="w-4 h-4" />
                 <span>Nytt notat</span>
@@ -1150,10 +1171,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
               ) : (
                 timelineSessions.map((session) => {
                   const isActive = activeSessionKey === session.key;
-                  let formattedDate = session.date;
-                  try {
-                    formattedDate = format(new Date(session.date + 'T12:00:00'), 'EEEE d. MMM yyyy', { locale: nb });
-                  } catch {}
+                  const formattedDate = safeFormatDate(session.date + 'T12:00:00', 'EEEE d. MMM yyyy', session.date);
 
                   const apt = session.appointment;
                   const isOnline = apt?.isOnline;
@@ -1704,16 +1722,13 @@ export const JournalView: React.FC<JournalViewProps> = ({
           ) : (
             <div className="space-y-6">
               {filteredAndSortedEntries.map((entry) => {
-                const sessionDateStr = entry.sessionDate || format(new Date(entry.createdAt), 'yyyy-MM-dd');
-                const sessionTimeStr = entry.sessionTime || format(new Date(entry.createdAt), 'HH:mm');
+                const sessionDateStr = entry.sessionDate || safeFormatDate(entry.createdAt, 'yyyy-MM-dd');
+                const sessionTimeStr = entry.sessionTime || safeFormatDate(entry.createdAt, 'HH:mm');
                 const matchedApt = entry.appointmentId ? appointments.find(a => a.id === entry.appointmentId) : null;
                 const sessionKey = matchedApt ? `apt_${matchedApt.id}` : `entry_${entry.id}`;
                 const isSelected = activeSessionKey === sessionKey;
 
-                let formattedDateTitle = sessionDateStr;
-                try {
-                  formattedDateTitle = format(new Date(sessionDateStr + 'T12:00:00'), 'EEEE d. MMMM yyyy', { locale: nb });
-                } catch {}
+                const formattedDateTitle = safeFormatDate(sessionDateStr + 'T12:00:00', 'EEEE d. MMMM yyyy', sessionDateStr);
 
                 return (
                   <article
@@ -1756,7 +1771,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
 
                         {entry.updatedAt !== entry.createdAt && (
                           <span className="text-[10px] text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                            Endret {format(new Date(entry.updatedAt), 'd. MMM HH:mm', { locale: nb })}
+                            Endret {safeFormatDate(entry.updatedAt, 'd. MMM HH:mm')}
                           </span>
                         )}
 
@@ -1790,7 +1805,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
 
                     {/* Bunndetails */}
                     <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-                      <span>Loggført: {format(new Date(entry.createdAt), 'd. MMMM yyyy kl. HH:mm', { locale: nb })}</span>
+                      <span>Loggført: {safeFormatDate(entry.createdAt, 'd. MMMM yyyy')} kl. {safeFormatDate(entry.createdAt, 'HH:mm')}</span>
                       <span className="inline-flex items-center gap-1 text-emerald-600 font-semibold">
                         <Lock className="w-3 h-3" />
                         AES-256 kryptert
@@ -1978,7 +1993,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
                   <div className="flex justify-between font-semibold text-slate-700">
                     <span>Endret av {rev.modifiedBy}</span>
                     <span className="text-slate-500 font-normal">
-                      {format(new Date(rev.timestamp), 'd. MMM yyyy HH:mm', { locale: nb })}
+                      {safeFormatDate(rev.timestamp, 'd. MMM yyyy HH:mm')}
                     </span>
                   </div>
                   {rev.changeNote && (

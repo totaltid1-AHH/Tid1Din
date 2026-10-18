@@ -194,7 +194,6 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
             <Users className="w-5 h-5 text-sky-600" />
             Klienter
           </h1>
-          <p className="text-[11px] text-slate-500">Kundenummer starter på 1000.</p>
         </div>
 
         {isSuperAdmin && (

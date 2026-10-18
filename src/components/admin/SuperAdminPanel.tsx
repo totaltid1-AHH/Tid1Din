@@ -305,6 +305,7 @@ export const SuperAdminPanel: React.FC = () => {
     if (!workingHours || !currentUser) return;
     const sanitizedWorkingHours: WorkingHoursConfig = {
       ...workingHours,
+      slotDurationMinutes: Math.max(15, Number(workingHours.slotDurationMinutes) || 45),
       breakBetweenMinutes: Number(workingHours.breakBetweenMinutes) || 0,
       prices: {
         single: Number(workingHours.prices?.single) || 0,
@@ -1170,6 +1171,68 @@ export const SuperAdminPanel: React.FC = () => {
                 </div>
               )}
 
+              {/* Lengde på timene (varighet per time) */}
+              <div className="pt-3 border-t border-slate-100 space-y-1.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <label htmlFor="slot-duration-input" className="block text-[11px] font-bold text-slate-700 uppercase flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-sky-600" />
+                    Lengde på timene (i minutter)
+                  </label>
+                  <span className="text-[11px] text-slate-400">Standard varighet for enkelttimer og tidsluker</span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-2 max-w-[160px]">
+                    <input
+                      id="slot-duration-input"
+                      type="number"
+                      min={15}
+                      max={240}
+                      step={5}
+                      value={workingHours.slotDurationMinutes ?? 45}
+                      placeholder="45"
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setWorkingHours({
+                          ...workingHours,
+                          slotDurationMinutes: val === '' ? ('' as unknown as number) : Math.max(0, parseInt(val, 10) || 0)
+                        });
+                      }}
+                      onBlur={(e) => {
+                        const val = parseInt(String(e.target.value), 10);
+                        if (!val || isNaN(val) || val < 15) {
+                          setWorkingHours({
+                            ...workingHours,
+                            slotDurationMinutes: 45
+                          });
+                        }
+                      }}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 font-bold text-xs bg-white"
+                    />
+                    <span className="text-xs font-semibold text-slate-500">min</span>
+                  </div>
+
+                  {/* Hurtigvalg */}
+                  <div className="flex items-center gap-1">
+                    {[30, 45, 60, 90].map((dur) => (
+                      <button
+                        key={dur}
+                        type="button"
+                        onClick={() => setWorkingHours({ ...workingHours, slotDurationMinutes: dur })}
+                        className={`px-2 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                          workingHours.slotDurationMinutes === dur
+                            ? 'bg-sky-600 text-white border-sky-600 shadow-2xs font-bold'
+                            : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {dur}m
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
               {/* Pausetid i minutter */}
               <div className="pt-3 border-t border-slate-100 space-y-1.5">
                 <label htmlFor="custom-break-input" className="block text-[11px] font-bold text-slate-700 uppercase flex items-center gap-1.5">
@@ -1257,7 +1320,9 @@ export const SuperAdminPanel: React.FC = () => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
                   <div className="p-2.5 rounded-xl border border-slate-200 bg-slate-50/50">
-                    <span className="text-[11px] text-slate-700 font-bold block">Enkelttime (45m)</span>
+                    <span className="text-[11px] text-slate-700 font-bold block">
+                      Enkelttime ({workingHours.slotDurationMinutes || 45}m)
+                    </span>
                     <div className="flex items-center gap-1 mt-1">
                       <input
                         type="number"
@@ -1293,7 +1358,9 @@ export const SuperAdminPanel: React.FC = () => {
                   </div>
 
                   <div className="p-2.5 rounded-xl border border-slate-200 bg-slate-50/50">
-                    <span className="text-[11px] text-slate-700 font-bold block">Dobbelttime (90m)</span>
+                    <span className="text-[11px] text-slate-700 font-bold block">
+                      Dobbelttime ({(workingHours.slotDurationMinutes || 45) * 2}m)
+                    </span>
                     <div className="flex items-center gap-1 mt-1">
                       <input
                         type="number"
@@ -1329,7 +1396,9 @@ export const SuperAdminPanel: React.FC = () => {
                   </div>
 
                   <div className="p-2.5 rounded-xl border border-slate-200 bg-slate-50/50">
-                    <span className="text-[11px] text-slate-700 font-bold block">Trippeltime (135m)</span>
+                    <span className="text-[11px] text-slate-700 font-bold block">
+                      Trippeltime ({(workingHours.slotDurationMinutes || 45) * 3}m)
+                    </span>
                     <div className="flex items-center gap-1 mt-1">
                       <input
                         type="number"

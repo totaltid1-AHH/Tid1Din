@@ -12,7 +12,7 @@ import { ClientListView } from './components/clients/ClientListView';
 import { SuperAdminPanel } from './components/admin/SuperAdminPanel';
 import { SuperAdminSettingsView } from './components/admin/SuperAdminSettingsView';
 import { JournalView } from './components/journal/JournalView';
-import { ShieldCheck, ShieldAlert, Lock, Calendar as CalendarIcon, CalendarPlus, LayoutDashboard, Users, Settings, BookOpen } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, Lock, Calendar as CalendarIcon, LayoutDashboard, Users, Settings, BookOpen } from 'lucide-react';
 
 const AppContent: React.FC = () => {
   const { currentUser, isLoading } = useAuth();
@@ -174,15 +174,6 @@ const AppContent: React.FC = () => {
           <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Kalender</span>
         </button>
 
-        <button
-          onClick={() => handleNavTab('booking')}
-          className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
-            currentTab === 'booking' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <CalendarPlus className="w-5 h-5 mb-0.5 flex-shrink-0" />
-          <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Bestill</span>
-        </button>
 
         {(currentUser.role === 'hovedadmin' || currentUser.role === 'admin') && (
           <button
