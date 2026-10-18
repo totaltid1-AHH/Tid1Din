@@ -261,14 +261,9 @@ export const JournalModal: React.FC<JournalModalProps> = ({
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-lg sm:text-xl font-bold text-slate-900">Kundejournal & Timenotater</h2>
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                  <Lock className="w-3 h-3 text-emerald-600" />
-                  Kryptert AES-256
-                </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
                 Klient: <strong className="text-slate-800">{displayName}</strong>
-                {client.birthDate && <span className="ml-2 text-slate-400">&bull; Født: {client.birthDate}</span>}
               </p>
             </div>
           </div>
@@ -424,7 +419,7 @@ export const JournalModal: React.FC<JournalModalProps> = ({
           {isLoading ? (
             <div className="text-center py-12 text-slate-400 text-sm">
               <div className="w-8 h-8 border-3 border-sky-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-              Laster krypterte journalnotater...
+              Laster journalnotater...
             </div>
           ) : sortedDateKeys.length === 0 ? (
             <div className="text-center py-14 text-slate-400 bg-slate-50 rounded-2xl border border-slate-200">
