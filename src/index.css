@@ -7,5 +7,17 @@
     @apply bg-slate-50 text-slate-900;
     -webkit-tap-highlight-color: transparent;
   }
+
+  /* Forhindrer at WebKit på iOS/iPad (Safari og Chrome) tvinger stor min-width på klokkeslett/dato */
+  input[type="time"],
+  input[type="date"] {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  input[type="time"]::-webkit-date-and-time-value {
+    text-align: center;
+  }
 }
 

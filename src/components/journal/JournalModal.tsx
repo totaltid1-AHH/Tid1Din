@@ -29,6 +29,7 @@ import {
 import { format } from 'date-fns';
 import { nb } from 'date-fns/locale';
 import { AppointmentSmsModal } from '../appointments/AppointmentSmsModal';
+import { generateTimeOptions } from '../../utils/calendar';
 
 interface JournalModalProps {
   client: UserProfile;
@@ -357,13 +358,16 @@ export const JournalModal: React.FC<JournalModalProps> = ({
                   <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
                     Klokkeslett for timen *
                   </label>
-                  <input
-                    type="time"
+                  <select
                     required
                     value={sessionTime}
                     onChange={(e) => setSessionTime(e.target.value)}
-                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-sky-500"
-                  />
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-sky-500 font-mono font-bold"
+                  >
+                    {generateTimeOptions([sessionTime]).map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

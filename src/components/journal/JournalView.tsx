@@ -46,6 +46,7 @@ import {
 import { format, addDays } from 'date-fns';
 import { nb } from 'date-fns/locale';
 import { AppointmentSmsModal } from '../appointments/AppointmentSmsModal';
+import { generateTimeOptions } from '../../utils/calendar';
 
 interface JournalViewProps {
   initialClientId?: string | null;
@@ -1386,13 +1387,16 @@ export const JournalView: React.FC<JournalViewProps> = ({
                   <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
                     Klokkeslett *
                   </label>
-                  <input
-                    type="time"
+                  <select
                     required
                     value={sessionTime}
                     onChange={(e) => setSessionTime(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs bg-white text-slate-800 outline-none focus:border-sky-500"
-                  />
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs bg-white text-slate-800 outline-none focus:border-sky-500 font-mono font-bold"
+                  >
+                    {generateTimeOptions([sessionTime]).map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -1575,8 +1579,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
                         <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
                           Starttidspunkt *
                         </label>
-                        <input
-                          type="time"
+                        <select
                           required={shouldBookNext}
                           value={nextStartTime}
                           onChange={(e) => {
@@ -1585,21 +1588,28 @@ export const JournalView: React.FC<JournalViewProps> = ({
                             // Beregn sluttid automatisk som +45 minutter (som standard)
                             setNextEndTime(calculateEndTime(val, 45));
                           }}
-                          className="w-full px-2.5 py-1.5 rounded-xl border border-slate-300 text-xs bg-white"
-                        />
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-slate-300 text-xs bg-white font-mono font-bold"
+                        >
+                          {generateTimeOptions([nextStartTime]).map(t => (
+                            <option key={t} value={t}>{t}</option>
+                          ))}
+                        </select>
                       </div>
 
                       <div>
                         <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
                           Sluttidspunkt *
                         </label>
-                        <input
-                          type="time"
+                        <select
                           required={shouldBookNext}
                           value={nextEndTime}
                           onChange={(e) => setNextEndTime(e.target.value)}
-                          className="w-full px-2.5 py-1.5 rounded-xl border border-slate-300 text-xs bg-white"
-                        />
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-slate-300 text-xs bg-white font-mono font-bold"
+                        >
+                          {generateTimeOptions([nextEndTime]).map(t => (
+                            <option key={t} value={t}>{t}</option>
+                          ))}
+                        </select>
                       </div>
 
                       <div>
@@ -1851,8 +1861,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
                   <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
                     Starttidspunkt *
                   </label>
-                  <input
-                    type="time"
+                  <select
                     required
                     value={newAptTime}
                     onChange={(e) => {
@@ -1861,21 +1870,28 @@ export const JournalView: React.FC<JournalViewProps> = ({
                       // Automatisk slutt-tid satt til +45 minutter som standard
                       setNewAptEndTime(calculateEndTime(val, 45));
                     }}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-800 outline-none focus:border-sky-500"
-                  />
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold font-mono text-slate-800 outline-none focus:border-sky-500 bg-white"
+                  >
+                    {generateTimeOptions([newAptTime]).map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
                     Sluttidspunkt * (standard 45 min)
                   </label>
-                  <input
-                    type="time"
+                  <select
                     required
                     value={newAptEndTime}
                     onChange={(e) => setNewAptEndTime(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-800 outline-none focus:border-sky-500"
-                  />
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold font-mono text-slate-800 outline-none focus:border-sky-500 bg-white"
+                  >
+                    {generateTimeOptions([newAptEndTime]).map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

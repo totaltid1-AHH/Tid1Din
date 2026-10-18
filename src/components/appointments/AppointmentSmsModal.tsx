@@ -18,6 +18,7 @@ import { Appointment, UserProfile, SmsTemplate } from '../../types';
 import { dbService } from '../../services/db';
 import { smsService } from '../../services/sms';
 import { useAuth } from '../../context/AuthContext';
+import { generateTimeOptions } from '../../utils/calendar';
 
 interface AppointmentSmsModalProps {
   isOpen: boolean;
@@ -663,12 +664,15 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
 
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-700 uppercase mb-1">Ny starttid *</label>
-                    <input
-                      type="time"
+                    <select
                       value={newStartTime}
                       onChange={(e) => handleDateOrTimeChange(newDate, e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 font-mono"
-                    />
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 font-mono font-bold"
+                    >
+                      {generateTimeOptions([newStartTime]).map(t => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 

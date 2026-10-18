@@ -30,9 +30,10 @@ import {
   UserCheck,
   UserX,
   X,
-  Edit2
+  Edit2,
+  ChevronDown
 } from 'lucide-react';
-import { formatTherapistName, isDateInHoliday, isTherapistOnLeave } from '../../utils/calendar';
+import { formatTherapistName, isDateInHoliday, isTherapistOnLeave, generateTimeOptions } from '../../utils/calendar';
 
 export const SuperAdminPanel: React.FC = () => {
   const { currentUser, updateUserPermissions } = useAuth();
@@ -781,40 +782,61 @@ export const SuperAdminPanel: React.FC = () => {
                 <label className="block text-[11px] font-bold text-slate-700 uppercase">
                   Fast lunsjpause
                 </label>
-                <div className="grid grid-cols-2 gap-2 text-xs max-w-sm">
-                  <div>
-                    <span className="text-[10px] text-slate-500 font-semibold">Lunsj start</span>
-                    <input
-                      type="time"
-                      value={workingHours.breaks?.[0]?.start || '12:00'}
-                      onChange={(e) => {
-                        const updatedBreaks = [...(workingHours.breaks || [])];
-                        if (updatedBreaks.length === 0) {
-                          updatedBreaks.push({ start: e.target.value, end: '12:30', title: 'Lunsjpause' });
-                        } else {
-                          updatedBreaks[0] = { ...updatedBreaks[0], start: e.target.value, title: 'Lunsjpause' };
-                        }
-                        setWorkingHours({ ...workingHours, breaks: updatedBreaks });
-                      }}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 font-bold mt-1"
-                    />
+                <div className="grid grid-cols-2 gap-3 sm:gap-4 text-xs max-w-md">
+                  <div className="bg-white rounded-xl border border-slate-300 p-2 sm:p-2.5 shadow-2xs focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/20 transition-all min-w-0">
+                    <span className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-0.5 truncate">
+                      Lunsj start
+                    </span>
+                    <div className="relative flex items-center">
+                      <select
+                        value={workingHours.breaks?.[0]?.start || '12:00'}
+                        onChange={(e) => {
+                          const updatedBreaks = [...(workingHours.breaks || [])];
+                          if (updatedBreaks.length === 0) {
+                            updatedBreaks.push({ start: e.target.value, end: '12:30', title: 'Lunsjpause' });
+                          } else {
+                            updatedBreaks[0] = { ...updatedBreaks[0], start: e.target.value, title: 'Lunsjpause' };
+                          }
+                          setWorkingHours({ ...workingHours, breaks: updatedBreaks });
+                        }}
+                        className="w-full bg-transparent font-mono text-sm sm:text-base font-extrabold text-slate-900 focus:outline-none cursor-pointer appearance-none pr-5 py-0.5 text-center"
+                      >
+                        {generateTimeOptions([workingHours.breaks?.[0]?.start || '12:00']).map((t) => (
+                          <option key={`lunch-start-${t}`} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-slate-400 absolute right-0 pointer-events-none" />
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-[10px] text-slate-500 font-semibold">Lunsj slutt</span>
-                    <input
-                      type="time"
-                      value={workingHours.breaks?.[0]?.end || '12:30'}
-                      onChange={(e) => {
-                        const updatedBreaks = [...(workingHours.breaks || [])];
-                        if (updatedBreaks.length === 0) {
-                          updatedBreaks.push({ start: '12:00', end: e.target.value, title: 'Lunsjpause' });
-                        } else {
-                          updatedBreaks[0] = { ...updatedBreaks[0], end: e.target.value, title: 'Lunsjpause' };
-                        }
-                        setWorkingHours({ ...workingHours, breaks: updatedBreaks });
-                      }}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 font-bold mt-1"
-                    />
+
+                  <div className="bg-white rounded-xl border border-slate-300 p-2 sm:p-2.5 shadow-2xs focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/20 transition-all min-w-0">
+                    <span className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-0.5 truncate">
+                      Lunsj slutt
+                    </span>
+                    <div className="relative flex items-center">
+                      <select
+                        value={workingHours.breaks?.[0]?.end || '12:30'}
+                        onChange={(e) => {
+                          const updatedBreaks = [...(workingHours.breaks || [])];
+                          if (updatedBreaks.length === 0) {
+                            updatedBreaks.push({ start: '12:00', end: e.target.value, title: 'Lunsjpause' });
+                          } else {
+                            updatedBreaks[0] = { ...updatedBreaks[0], end: e.target.value, title: 'Lunsjpause' };
+                          }
+                          setWorkingHours({ ...workingHours, breaks: updatedBreaks });
+                        }}
+                        className="w-full bg-transparent font-mono text-sm sm:text-base font-extrabold text-slate-900 focus:outline-none cursor-pointer appearance-none pr-5 py-0.5 text-center"
+                      >
+                        {generateTimeOptions([workingHours.breaks?.[0]?.end || '12:30']).map((t) => (
+                          <option key={`lunch-end-${t}`} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-slate-400 absolute right-0 pointer-events-none" />
+                    </div>
                   </div>
                 </div>
               </div>
