@@ -285,20 +285,20 @@ export const BookingView: React.FC<BookingViewProps> = ({
     return startMin < aEnd && endMin > aStart;
   });
 
-  // Håndter valg av forslag for varighet (1, 2 eller 3 timer, ev. 45 min)
-  const applyDurationSuggestion = (hours: number) => {
-    setSuggestedHours(hours);
-    const newEnd = calculateEndTime(startTime, hours);
+  const clinicSlotMinutes = workingHours?.slotDurationMinutes || 45;
+
+  // Håndter valg av forslag for varighet (enkelttime, dobbelttime eller trippeltime)
+  const applyDurationMinutes = (minutes: number) => {
+    setSuggestedHours(minutes / 60);
+    const newEnd = calculateEndTime(startTime, minutes / 60);
     setEndTime(newEnd);
 
-    if (hours === 1) {
+    if (minutes === clinicSlotMinutes) {
       setPrice(workingHours?.prices?.single ?? 950);
-    } else if (hours === 2) {
+    } else if (minutes === clinicSlotMinutes * 2) {
       setPrice(workingHours?.prices?.double ?? 1800);
-    } else if (hours === 3) {
+    } else if (minutes === clinicSlotMinutes * 3) {
       setPrice(workingHours?.prices?.triple ?? 2600);
-    } else if (hours === 0.75) {
-      setPrice(workingHours?.prices?.single ?? 950);
     }
   };
 
@@ -774,92 +774,77 @@ export const BookingView: React.FC<BookingViewProps> = ({
               </div>
             )}
 
-            {/* TIDSPUNKT: STARTTID OG FORSLAG TIL SLUTTID */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            {/* TIDSPUNKT: STARTTID OG SLUTTID */}
+            <div className="grid grid-cols-2 gap-2.5">
               
               {/* Starttid */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                  Starttidspunkt (velges manuelt)
+              <div className="min-w-0">
+                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-0.5 truncate">
+                  Starttid
                 </label>
-                <div className="relative">
-                  <input
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => handleStartTimeChange(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono text-sm font-extrabold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
-                  />
-                </div>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => handleStartTimeChange(e.target.value)}
+                  className="w-full h-9 px-2 text-center rounded-lg border border-slate-300 font-mono text-sm font-extrabold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 box-border"
+                />
               </div>
 
-              {/* Sluttid (ikke låst) */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                  Sluttidspunkt (fritt redigerbar)
+              {/* Sluttid */}
+              <div className="min-w-0">
+                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-0.5 truncate">
+                  Sluttid
                 </label>
-                <div className="relative">
-                  <input
-                    type="time"
-                    value={endTime}
-                    onChange={(e) => handleEndTimeChange(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono text-sm font-extrabold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
-                  />
-                </div>
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => handleEndTimeChange(e.target.value)}
+                  className="w-full h-9 px-2 text-center rounded-lg border border-slate-300 font-mono text-sm font-extrabold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 box-border"
+                />
               </div>
 
             </div>
 
-            {/* FORSLAG TIL SLUTTID (1, 2 ELLER 3 TIMER) */}
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-700 uppercase">
-                Forslag til sluttid basert på varighet:
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => applyDurationSuggestion(1)}
-                  className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
-                    suggestedHours === 1
-                      ? 'border-sky-600 bg-sky-50 text-sky-900 ring-2 ring-sky-500 font-bold shadow-xs'
-                      : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium'
-                  }`}
-                >
-                  <span className="block text-xs font-extrabold">1 time</span>
-                  <span className="block text-[10px] text-slate-500 mt-0.5">+60 minutter</span>
-                  <span className="block text-[11px] font-bold text-sky-700 mt-0.5">kr {workingHours?.prices?.single ?? 950},-</span>
-                </button>
+            {/* Hurtigvalg av varighet tilpasset Klinikk-oppsettet (uten 'Forslag til sluttid:'-tekst) */}
+            <div className="grid grid-cols-3 gap-1.5 pt-0.5">
+              <button
+                type="button"
+                onClick={() => applyDurationMinutes(clinicSlotMinutes)}
+                className={`py-1.5 px-2 rounded-lg border text-center transition-all cursor-pointer ${
+                  durationMinutes === clinicSlotMinutes
+                    ? 'border-sky-600 bg-sky-50 text-sky-900 ring-2 ring-sky-500 font-bold shadow-2xs'
+                    : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium'
+                }`}
+              >
+                <span className="block text-xs font-bold">Enkelttime ({clinicSlotMinutes}m)</span>
+                <span className="block text-[10px] text-sky-700 font-semibold mt-0.5">kr {workingHours?.prices?.single ?? 950},-</span>
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => applyDurationSuggestion(2)}
-                  className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
-                    suggestedHours === 2
-                      ? 'border-sky-600 bg-sky-50 text-sky-900 ring-2 ring-sky-500 font-bold shadow-xs'
-                      : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium'
-                  }`}
-                >
-                  <span className="block text-xs font-extrabold">2 timer</span>
-                  <span className="block text-[10px] text-slate-500 mt-0.5">+120 minutter</span>
-                  <span className="block text-[11px] font-bold text-sky-700 mt-0.5">kr {workingHours?.prices?.double ?? 1800},-</span>
-                </button>
+              <button
+                type="button"
+                onClick={() => applyDurationMinutes(clinicSlotMinutes * 2)}
+                className={`py-1.5 px-2 rounded-lg border text-center transition-all cursor-pointer ${
+                  durationMinutes === clinicSlotMinutes * 2
+                    ? 'border-sky-600 bg-sky-50 text-sky-900 ring-2 ring-sky-500 font-bold shadow-2xs'
+                    : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium'
+                }`}
+              >
+                <span className="block text-xs font-bold">Dobbelttime ({clinicSlotMinutes * 2}m)</span>
+                <span className="block text-[10px] text-sky-700 font-semibold mt-0.5">kr {workingHours?.prices?.double ?? 1800},-</span>
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => applyDurationSuggestion(3)}
-                  className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
-                    suggestedHours === 3
-                      ? 'border-sky-600 bg-sky-50 text-sky-900 ring-2 ring-sky-500 font-bold shadow-xs'
-                      : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium'
-                  }`}
-                >
-                  <span className="block text-xs font-extrabold">3 timer</span>
-                  <span className="block text-[10px] text-slate-500 mt-0.5">+180 minutter</span>
-                  <span className="block text-[11px] font-bold text-sky-700 mt-0.5">kr {workingHours?.prices?.triple ?? 2600},-</span>
-                </button>
-              </div>
-              <p className="text-[11px] text-slate-500 italic mt-1">
-                Merk: Sluttidspunktet er ikke låst og kan justeres manuelt i feltet over etter eget behov.
-              </p>
+              <button
+                type="button"
+                onClick={() => applyDurationMinutes(clinicSlotMinutes * 3)}
+                className={`py-1.5 px-2 rounded-lg border text-center transition-all cursor-pointer ${
+                  durationMinutes === clinicSlotMinutes * 3
+                    ? 'border-sky-600 bg-sky-50 text-sky-900 ring-2 ring-sky-500 font-bold shadow-2xs'
+                    : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium'
+                }`}
+              >
+                <span className="block text-xs font-bold">Trippeltime ({clinicSlotMinutes * 3}m)</span>
+                <span className="block text-[10px] text-sky-700 font-semibold mt-0.5">kr {workingHours?.prices?.triple ?? 2600},-</span>
+              </button>
             </div>
 
             {/* BEREGNET VARIGHET OG PRIS */}

@@ -947,7 +947,7 @@ export const CalendarView: React.FC = () => {
       {/* POPUP-VINDU (MODAL): DAGENS AVTALER OG BESTILLING AV TIME */}
       {isDaySlotsModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="relative w-full max-w-lg bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 p-3.5 sm:p-5 max-h-[92vh] flex flex-col">
+          <div className="relative w-full max-w-md bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 p-3.5 sm:p-5 max-h-[92vh] flex flex-col">
             
             {/* Modal Header */}
             <div className="flex items-start justify-between pb-2.5 border-b border-slate-100">
@@ -1195,27 +1195,27 @@ export const CalendarView: React.FC = () => {
 
                 {/* Start- og sluttid */}
                 <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-0.5">
-                      Starttidspunkt
+                  <div className="min-w-0">
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-0.5 truncate">
+                      Starttid
                     </label>
                     <input
                       type="time"
                       value={bookingStartTime}
                       onChange={(e) => handleBookingStartTimeChange(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 font-mono text-sm font-extrabold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                      className="w-full h-9 px-2 text-center rounded-lg border border-slate-300 font-mono text-sm font-extrabold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 box-border"
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-0.5">
-                      Sluttid (fritt redigerbar)
+                  <div className="min-w-0">
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-0.5 truncate">
+                      Sluttid
                     </label>
                     <input
                       type="time"
                       value={bookingEndTime}
                       onChange={(e) => handleBookingEndTimeChange(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 font-mono text-sm font-extrabold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                      className="w-full h-9 px-2 text-center rounded-lg border border-slate-300 font-mono text-sm font-extrabold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 box-border"
                     />
                   </div>
                 </div>
