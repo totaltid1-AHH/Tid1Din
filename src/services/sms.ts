@@ -141,11 +141,15 @@ export class SmsService {
               response = await fetch(url, {
                 method: 'POST',
                 headers: {
-                  'Content-Type': 'application/json'
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json'
                 },
                 body: JSON.stringify({
                   toPhone: toPhone,
+                  phone: toPhone,
+                  to: toPhone,
                   message: message,
+                  text: message,
                   sender: cleanSender,
                   apiKey: apiKey
                 })

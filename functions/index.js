@@ -9,6 +9,11 @@ const cors = require("cors")({ origin: true });
  */
 exports.sendSms = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
+    // Håndter CORS preflight
+    if (req.method === "OPTIONS") {
+      return res.status(204).send("");
+    }
+
     // Tillat kun POST
     if (req.method !== "POST") {
       return res.status(405).json({
@@ -18,17 +23,41 @@ exports.sendSms = functions.https.onRequest((req, res) => {
     }
 
     try {
-      const { toPhone, message, sender, apiKey } = req.body || {};
+      // Håndter req.body uansett om det kommer som objekt, streng eller Buffer
+      let body = req.body;
+      if (typeof body === "string") {
+        try {
+          body = JSON.parse(body);
+        } catch (e) {
+          console.warn("Kunne ikke parse body som JSON-streng:", e);
+          body = {};
+        }
+      } else if (Buffer.isBuffer(body)) {
+        try {
+          body = JSON.parse(body.toString("utf8"));
+        } catch (e) {
+          console.warn("Kunne ikke parse body fra Buffer:", e);
+          body = {};
+        }
+      }
+      body = body || {};
+
+      // Les ut parametere fleksibelt
+      const toPhone = body.toPhone || body.phone || body.to || body.recipient || body.msisdn;
+      const message = body.message || body.text || body.msg;
+      const sender = body.sender || body.from;
+      const apiKey = body.apiKey || body.key || body.token;
 
       if (!toPhone || !message) {
         return res.status(400).json({
           ok: false,
-          error: "Påkrevde felter mangler: 'toPhone' og 'message' må oppgis."
+          error: "Påkrevde felter mangler: 'toPhone' og 'message' må oppgis.",
+          receivedKeys: Object.keys(body)
         });
       }
 
       // Bruk innsendt API-nøkkel fra innstillinger (eller miljøvariabel som fallback)
-      const effectiveKey = (apiKey || process.env.GATEWAY_API_KEY || "").trim();
+      const effectiveKey = String(apiKey || process.env.GATEWAY_API_KEY || "").trim();
       if (!effectiveKey || effectiveKey.length < 5) {
         return res.status(400).json({
           ok: false,
