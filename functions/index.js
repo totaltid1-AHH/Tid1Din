@@ -42,21 +42,54 @@ exports.sendSms = functions.https.onRequest((req, res) => {
       }
       body = body || {};
 
-      // Les ut parametere fleksibelt
-      const toPhone = body.toPhone || body.phone || body.to || body.recipient || body.msisdn;
+      // 1. Les ut mottaker-telefonnummer fleksibelt (både direkte felter og GatewayAPI 'recipients' array)
+      let toPhone =
+        body.toPhone ||
+        body.phone ||
+        body.to ||
+        body.recipient ||
+        body.msisdn;
+
+      // Hvis forespørselen bruker GatewayAPI sitt eget format: { recipients: [{ msisdn: 47... }] }
+      if (!toPhone && Array.isArray(body.recipients) && body.recipients.length > 0) {
+        const first = body.recipients[0];
+        if (typeof first === "object" && first !== null) {
+          toPhone = first.msisdn || first.phone || first.to || first.number;
+        } else {
+          toPhone = first;
+        }
+      }
+
+      // 2. Les ut melding
       const message = body.message || body.text || body.msg;
+
+      // 3. Les ut avsender
       const sender = body.sender || body.from;
-      const apiKey = body.apiKey || body.key || body.token;
+
+      // 4. Les ut API-nøkkel (enten fra body, eller fra Authorization-header, eller miljøvariabel)
+      let apiKey = body.apiKey || body.key || body.token;
+      if (!apiKey && req.headers && req.headers.authorization) {
+        const auth = req.headers.authorization;
+        if (auth.startsWith("Basic ")) {
+          try {
+            const decoded = Buffer.from(auth.substring(6), "base64").toString("utf8");
+            apiKey = decoded.split(":")[0];
+          } catch (e) {
+            console.warn("Kunne ikke decode Basic Auth header:", e);
+          }
+        } else if (auth.startsWith("Bearer ")) {
+          apiKey = auth.substring(7);
+        }
+      }
 
       if (!toPhone || !message) {
         return res.status(400).json({
           ok: false,
-          error: "Påkrevde felter mangler: 'toPhone' og 'message' må oppgis.",
+          error: "Påkrevde felter mangler: telefonnummer og melding må oppgis.",
           receivedKeys: Object.keys(body)
         });
       }
 
-      // Bruk innsendt API-nøkkel fra innstillinger (eller miljøvariabel som fallback)
       const effectiveKey = String(apiKey || process.env.GATEWAY_API_KEY || "").trim();
       if (!effectiveKey || effectiveKey.length < 5) {
         return res.status(400).json({
