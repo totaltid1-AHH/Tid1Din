@@ -62,8 +62,7 @@ export class SmsService {
   }
 
   /**
-   * Sender SMS via GatewayAPI.com REST API
-   * Dokumentasjon: https://gatewayapi.com/docs/rest.html
+   * Sender SMS via Firebase Cloud Function (sendSms) til GatewayAPI.com REST API
    */
   public async sendSms(
     toPhone: string,
@@ -99,89 +98,101 @@ export class SmsService {
 
     const apiKey = (settings.apiKey || '').trim();
 
-    // Hvis ekte GatewayAPI-nøkkel er oppgitt, send ekte HTTP-forespørsel
+    // Hvis ekte GatewayAPI-nøkkel er oppgitt, send forespørsel
     if (apiKey.length > 5) {
       try {
-        // Avsender (sender): GatewayAPI tillater maks 11 tegn (alfanumerisk) eller 15 siffer
         const cleanSender = (settings.sender || 'Tid1Din').trim().substring(0, 11) || 'Tid1Din';
 
-        const payload = {
-          sender: cleanSender,
-          message: message,
-          recipients: [{ msisdn: msisdnNumber }]
-        };
-
-        // Bruk lokal proxy på dev-server for å omgå nettleserens CORS-blokkering
         const isLocalHost = typeof window !== 'undefined' && (
           window.location.hostname === 'localhost' ||
           window.location.hostname === '127.0.0.1' ||
           window.location.port === '5173'
         );
 
-        const endpoints = isLocalHost 
-          ? ['/api/gatewayapi/rest/mtsms', 'https://gatewayapi.com/rest/mtsms']
-          : [
-              'https://gatewayapi.com/rest/mtsms',
-              'https://corsproxy.io/?' + encodeURIComponent('https://gatewayapi.com/rest/mtsms')
-            ];
+        // Endepunkter:
+        // 1. /api/send-sms (Firebase Hosting rewrite til Cloud Function sendSms)
+        // 2. Direkte Cloud Function URL (i us-central1) som fallback
+        // 3. /api/gatewayapi/rest/mtsms (kun aktiv lokalt med Vite dev-server proxy)
+        const endpoints = isLocalHost
+          ? ['/api/gatewayapi/rest/mtsms', '/api/send-sms', 'https://us-central1-tid1din.cloudfunctions.net/sendSms']
+          : ['/api/send-sms', 'https://us-central1-tid1din.cloudfunctions.net/sendSms'];
 
         let response: Response | null = null;
         let lastError: any = null;
 
         for (const url of endpoints) {
           try {
-            response = await fetch(url, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Basic ' + btoa(`${apiKey}:`)
-              },
-              body: JSON.stringify(payload)
-            });
-            if (response) break;
+            if (url.includes('/api/gatewayapi')) {
+              // Direkte dev-proxy til GatewayAPI (lokalt)
+              response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': 'Basic ' + btoa(`${apiKey}:`)
+                },
+                body: JSON.stringify({
+                  sender: cleanSender,
+                  message: message,
+                  recipients: [{ msisdn: msisdnNumber }]
+                })
+              });
+            } else {
+              // Firebase Cloud Function (produksjon)
+              response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  toPhone: toPhone,
+                  message: message,
+                  sender: cleanSender,
+                  apiKey: apiKey
+                })
+              });
+            }
+
+            if (response && (response.ok || response.status === 400 || response.status === 401 || response.status === 402 || response.status === 422)) {
+              break;
+            }
           } catch (e) {
             lastError = e;
           }
         }
 
         if (!response) {
-          throw lastError || new Error('Nettverksfeil mot GatewayAPI');
+          throw lastError || new Error('Nettverksfeil mot SMS-tjenesten');
+        }
+
+        let responseData: any = {};
+        const rawText = await response.text();
+        try {
+          responseData = JSON.parse(rawText);
+        } catch {
+          responseData = { message: rawText };
         }
 
         if (response.ok) {
-          const data = await response.json();
           logEntry.status = 'sent';
-          logEntry.response = JSON.stringify(data);
+          logEntry.response = JSON.stringify(responseData.data || responseData);
         } else {
           const status = response.status;
-          let errorDetail = '';
-          try {
-            const errJson = await response.json();
-            errorDetail = errJson.message || JSON.stringify(errJson);
-          } catch {
-            errorDetail = await response.text();
-          }
-
           logEntry.status = 'failed';
 
+          let errorMsg = responseData.error || responseData.message || rawText;
           if (status === 401) {
-            logEntry.response = `Feil 401 (Uautorisert): Ugyldig API-nøkkel. Sjekk at du har kopiert riktig token fra GatewayAPI > API > API Keys (uten ekstra mellomrom).`;
+            errorMsg = 'Feil 401: Ugyldig GatewayAPI-nøkkel. Vennligst sjekk at tokenet er kopiert riktig fra GatewayAPI-dashbordet.';
           } else if (status === 402) {
-            logEntry.response = `Feil 402: Kontoen mangler SMS-kreditter. Fyll på saldo hos GatewayAPI.com.`;
+            errorMsg = 'Feil 402: Kontoen mangler SMS-kreditter. Fyll på saldo hos GatewayAPI.com.';
           } else if (status === 422) {
-            logEntry.response = `Feil 422 (Ugyldig data): ${errorDetail || 'Sjekk at mottakerens telefonnummer og avsendernavn er gyldig.'}`;
-          } else {
-            logEntry.response = `GatewayAPI feil (${status}): ${errorDetail}`;
+            errorMsg = `Feil 422 (Ugyldig data): ${errorMsg}`;
           }
+
+          logEntry.response = errorMsg;
         }
       } catch (err: any) {
         logEntry.status = 'failed';
-        const msg = err.message || '';
-        if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('CORS')) {
-          logEntry.response = 'CORS/Nettverksfeil: Nettleseren blokkerte direkte forespørsel mot GatewayAPI. Sørg for at appen kjører med lokal utviklingsserver (npm run dev) som har proxy aktivert, eller sjekk nettforbindelsen.';
-        } else {
-          logEntry.response = msg || 'Ukjent nettverksfeil mot GatewayAPI';
-        }
+        logEntry.response = err.message || 'Ukjent nettverksfeil mot SMS-tjenesten';
       }
     } else {
       // Simuleringsmodus når API-nøkkel ikke er lagt inn
