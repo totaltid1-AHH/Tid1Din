@@ -99,6 +99,7 @@ export const CalendarView: React.FC = () => {
   const [bookingNotes, setBookingNotes] = useState('');
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [sendConfirmationSms, setSendConfirmationSms] = useState(true);
+  const [bookingClientPhone, setBookingClientPhone] = useState<string>('');
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
   const [bookingSuccessMessage, setBookingSuccessMessage] = useState<string | null>(null);
   const [editingAppointmentId, setEditingAppointmentId] = useState<string | null>(null);
@@ -181,9 +182,13 @@ export const CalendarView: React.FC = () => {
 
     if (currentUser?.role === 'client') {
       setSelectedClientId(currentUser.uid);
+      setBookingClientPhone(currentUser.phone || '');
     } else if (users.length > 0 && !selectedClientId) {
       const firstClient = users.find(u => u.role === 'client');
-      if (firstClient) setSelectedClientId(firstClient.uid);
+      if (firstClient) {
+        setSelectedClientId(firstClient.uid);
+        setBookingClientPhone(firstClient.phone || '');
+      }
     }
   };
 
@@ -385,8 +390,14 @@ export const CalendarView: React.FC = () => {
     setIsOnlineMeeting(false);
     setSendConfirmationSms(true);
     setSendConfirmationSms(true);
-    if (currentUser?.role !== 'client' && clients.length > 0 && !selectedClientId) {
-      setSelectedClientId(clients[0].uid);
+    if (currentUser?.role !== 'client') {
+      const activeC = clients.find(c => c.uid === selectedClientId) || clients[0];
+      if (activeC) {
+        if (!selectedClientId) setSelectedClientId(activeC.uid);
+        setBookingClientPhone(activeC.phone || '');
+      }
+    } else {
+      setBookingClientPhone(currentUser?.phone || '');
     }
     setIsDaySlotsModalOpen(true);
   };
@@ -402,6 +413,7 @@ export const CalendarView: React.FC = () => {
     setCancellingAptId(null);
     setSelectedClientId(apt.clientId);
     setSendConfirmationSms(true);
+    setBookingClientPhone(apt.clientPhone || clients.find(c => c.uid === apt.clientId)?.phone || '');
     setBookingStartTime(apt.startTime);
     setBookingEndTime(apt.endTime);
     setBookingPrice(apt.price);
@@ -578,6 +590,25 @@ export const CalendarView: React.FC = () => {
         return;
       }
 
+      const finalPhone = (bookingClientPhone || '').trim() || clientObj.phone || '';
+
+      if (sendConfirmationSms && !finalPhone) {
+        alert('Du har valgt å sende bekreftelsesmelding med dato og tid, men mottakers mobilnummer mangler.\n\nVennligst oppgi et mobilnummer, eller fjern avhukingen for SMS.');
+        setIsSubmittingBooking(false);
+        return;
+      }
+
+      // Hvis telefonnummer ble fylt inn og manglet på profilen, oppdater profilen
+      if (finalPhone && finalPhone !== clientObj.phone && clientObj.uid) {
+        try {
+          const updatedClient = { ...clientObj, phone: finalPhone };
+          await dbService.saveUser(updatedClient);
+          setClients(clients.map(c => c.uid === updatedClient.uid ? updatedClient : c));
+        } catch (uErr) {
+          console.warn('Kunne ikke auto-lagre telefonnummer til klient:', uErr);
+        }
+      }
+
       const clinicDur = workingHours?.slotDurationMinutes || 45;
       let slotType: 'single' | 'double' | 'triple' = 'single';
       if (dur >= clinicDur * 3) slotType = 'triple';
@@ -593,7 +624,7 @@ export const CalendarView: React.FC = () => {
           clientId: clientObj.uid,
           clientNumber: clientObj.customerNumber || 1000,
           clientName: clientObj.displayName,
-          clientPhone: clientObj.phone || activeEditingApt.clientPhone || '',
+          clientPhone: finalPhone || activeEditingApt.clientPhone || '',
           clientEmail: clientObj.email || activeEditingApt.clientEmail || '',
           startTime: bookingStartTime,
           endTime: bookingEndTime,
@@ -609,16 +640,12 @@ export const CalendarView: React.FC = () => {
         await dbService.saveAppointment(updatedAppointment);
 
         // Send bekreftelse dersom avhuket
-        let smsSentOk = false;
+        let smsLog: any = null;
         if (sendConfirmationSms) {
           try {
-            const smsLog = await Promise.race([
-              smsService.sendBookingConfirmation(updatedAppointment),
-              new Promise<null>((_, reject) => setTimeout(() => reject(new Error('SMS timeout')), 3500))
-            ]);
-            if (smsLog?.status === 'sent') smsSentOk = true;
+            smsLog = await smsService.sendBookingConfirmation(updatedAppointment);
           } catch (smsErr) {
-            console.warn('SMS-sending feilet eller tok lang tid:', smsErr);
+            console.warn('SMS-sending feilet:', smsErr);
           }
         }
 
@@ -631,12 +658,24 @@ export const CalendarView: React.FC = () => {
         await loadData();
         setIsDaySlotsModalOpen(false);
         setEditingAppointmentId(null);
+
+        let smsStatusFeedback = '(uten SMS-bekreftelse)';
+        if (sendConfirmationSms) {
+          if (smsLog?.status === 'sent') {
+            smsStatusFeedback = `✅ Bekreftelses-SMS er sendt til ${finalPhone}.`;
+          } else if (smsLog?.status === 'simulated') {
+            smsStatusFeedback = `ℹ️ SMS registrert i testmodus (API-nøkkel mangler i innstillinger).`;
+          } else if (smsLog?.status === 'failed') {
+            smsStatusFeedback = `⚠️ Avtale oppdatert, men SMS feilet: ${smsLog.response || 'Ukjent feil'}.`;
+          } else {
+            smsStatusFeedback = `Bekreftelsesmelding registrert.`;
+          }
+        }
+
         setBookingSuccessMessage(
-          sendConfirmationSms
-            ? `Avtalen for ${clientObj.displayName} ble oppdatert! Bekreftelsesmelding ${smsSentOk ? 'sendt' : 'registrert'}.`
-            : `Avtalen for ${clientObj.displayName} ble oppdatert (uten utsendelse av bekreftelsesmelding).`
+          `Avtalen for ${clientObj.displayName} den ${updatedAppointment.date} kl. ${updatedAppointment.startTime}–${updatedAppointment.endTime} ble oppdatert! ${smsStatusFeedback}`
         );
-        setTimeout(() => setBookingSuccessMessage(null), 3000);
+        setTimeout(() => setBookingSuccessMessage(null), 7000);
         return;
       }
 
@@ -648,7 +687,7 @@ export const CalendarView: React.FC = () => {
         clientId: clientObj.uid,
         clientNumber: clientObj.customerNumber || 1000,
         clientName: clientObj.displayName,
-        clientPhone: clientObj.phone || '',
+        clientPhone: finalPhone,
         clientEmail: clientObj.email || '',
         therapistId: selectedTherapist?.uid,
         therapistName: formatTherapistName(selectedTherapist?.displayName),
@@ -668,16 +707,12 @@ export const CalendarView: React.FC = () => {
       await dbService.saveAppointment(newAppointment);
 
       // Send bekreftelse dersom avhuket
-      let smsSentOk = false;
+      let smsLog: any = null;
       if (sendConfirmationSms) {
         try {
-          const smsLog = await Promise.race([
-            smsService.sendBookingConfirmation(newAppointment),
-            new Promise<null>((_, reject) => setTimeout(() => reject(new Error('SMS timeout')), 3500))
-          ]);
-          if (smsLog?.status === 'sent') smsSentOk = true;
+          smsLog = await smsService.sendBookingConfirmation(newAppointment);
         } catch (smsErr) {
-          console.warn('SMS-sending tok lang tid eller feilet, fortsetter booking:', smsErr);
+          console.warn('SMS-sending feilet:', smsErr);
         }
       }
 
@@ -689,11 +724,24 @@ export const CalendarView: React.FC = () => {
 
       await loadData();
       setIsDaySlotsModalOpen(false);
+
+      let smsStatusFeedback = '(uten SMS-bekreftelse)';
+      if (sendConfirmationSms) {
+        if (smsLog?.status === 'sent') {
+          smsStatusFeedback = `✅ Bekreftelses-SMS er sendt til ${finalPhone}.`;
+        } else if (smsLog?.status === 'simulated') {
+          smsStatusFeedback = `ℹ️ SMS registrert i testmodus (API-nøkkel mangler i innstillinger).`;
+        } else if (smsLog?.status === 'failed') {
+          smsStatusFeedback = `⚠️ Time bestilt, men SMS feilet: ${smsLog.response || 'Ukjent feil'}.`;
+        } else {
+          smsStatusFeedback = `Bekreftelsesmelding registrert.`;
+        }
+      }
+
       setBookingSuccessMessage(
-        sendConfirmationSms
-          ? `Timen er bekreftet for ${clientObj.displayName}! Bekreftelsesmelding ${smsSentOk ? 'sendt' : 'registrert'}.`
-          : `Timen er bekreftet for ${clientObj.displayName} (uten utsendelse av bekreftelsesmelding).`
+        `Timen for ${clientObj.displayName} den ${newAppointment.date} kl. ${newAppointment.startTime}–${newAppointment.endTime} er bekreftet! ${smsStatusFeedback}`
       );
+      setTimeout(() => setBookingSuccessMessage(null), 7000);
       setBookingNotes('');
     } catch (e: any) {
       alert('Feil ved bestilling: ' + e.message);
@@ -1366,7 +1414,12 @@ export const CalendarView: React.FC = () => {
                       </label>
                       <select
                         value={selectedClientId}
-                        onChange={(e) => setSelectedClientId(e.target.value)}
+                        onChange={(e) => {
+                          const newId = e.target.value;
+                          setSelectedClientId(newId);
+                          const c = clients.find(cl => cl.uid === newId);
+                          setBookingClientPhone(c?.phone || '');
+                        }}
                         className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-medium focus:outline-none bg-white"
                       >
                         {clients.map(c => {
@@ -1531,6 +1584,32 @@ export const CalendarView: React.FC = () => {
                         </div>
                       </div>
                     </label>
+
+                    {sendConfirmationSms && (
+                      <div className="p-2.5 rounded-xl bg-sky-50/60 border border-sky-100 text-xs space-y-1 mt-1">
+                        <label className="block text-[10px] font-bold text-slate-700 uppercase">
+                          Mottakers mobilnummer (SMS):
+                        </label>
+                        <input
+                          type="tel"
+                          value={bookingClientPhone}
+                          onChange={(e) => setBookingClientPhone(e.target.value)}
+                          placeholder="f.eks. 91234567"
+                          className={`w-full px-2.5 py-1.5 rounded-lg border text-xs focus:outline-none bg-white font-mono ${
+                            !bookingClientPhone.trim() ? 'border-amber-400 bg-amber-50/50' : 'border-slate-300'
+                          }`}
+                        />
+                        {!bookingClientPhone.trim() ? (
+                          <p className="text-[10px] text-amber-700 font-medium">
+                            ⚠️ Mobilnummer mangler for denne klienten. Oppgi nummer for å motta bekreftelse på SMS.
+                          </p>
+                        ) : (
+                          <p className="text-[10px] text-slate-500">
+                            Bekreftelses-SMS sendes automatisk til dette nummeret.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Info om eksisterende avtale for samme klient i dette tidsrommet */}

@@ -110,110 +110,106 @@ export class SmsService {
 
     const apiKey = (settings.apiKey || '').trim();
 
-    // Hvis ekte GatewayAPI-nøkkel er oppgitt, send forespørsel
-    if (apiKey.length > 5) {
-      try {
-        const cleanSender = (settings.sender || 'Tid1Din').trim().substring(0, 11) || 'Tid1Din';
+    try {
+      const cleanSender = (settings.sender || 'Tid1Din').trim().substring(0, 11) || 'Tid1Din';
 
-        const isLocalHost = typeof window !== 'undefined' && (
-          window.location.hostname === 'localhost' ||
-          window.location.hostname === '127.0.0.1' ||
-          window.location.port === '5173'
-        );
+      const isLocalHost = typeof window !== 'undefined' && (
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        window.location.port === '5173'
+      );
 
-        // Endepunkter:
-        // 1. /api/send-sms (Firebase Hosting rewrite til Cloud Function sendSms)
-        // 2. Direkte Cloud Function URL (i us-central1) som fallback
-        // 3. /api/gatewayapi/rest/mtsms (kun aktiv lokalt med Vite dev-server proxy)
-        const endpoints = isLocalHost
-          ? ['/api/gatewayapi/rest/mtsms', '/api/send-sms', 'https://us-central1-tid1din.cloudfunctions.net/sendSms']
-          : ['/api/send-sms', 'https://us-central1-tid1din.cloudfunctions.net/sendSms'];
-
-        let response: Response | null = null;
-        let lastError: any = null;
-
-        for (const url of endpoints) {
-          try {
-            if (url.includes('/api/gatewayapi')) {
-              // Direkte dev-proxy til GatewayAPI (lokalt)
-              response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': 'Basic ' + btoa(`${apiKey}:`)
-                },
-                body: JSON.stringify({
-                  sender: cleanSender,
-                  message: message,
-                  recipients: [{ msisdn: msisdnNumber }]
-                })
-              });
-            } else {
-              // Firebase Cloud Function (produksjon)
-              response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Accept': 'application/json'
-                },
-                body: JSON.stringify({
-                  toPhone: toPhone,
-                  phone: toPhone,
-                  to: toPhone,
-                  message: message,
-                  text: message,
-                  sender: cleanSender,
-                  apiKey: apiKey
-                })
-              });
-            }
-
-            if (response && (response.ok || response.status === 400 || response.status === 401 || response.status === 402 || response.status === 422)) {
-              break;
-            }
-          } catch (e) {
-            lastError = e;
-          }
-        }
-
-        if (!response) {
-          throw lastError || new Error('Nettverksfeil mot SMS-tjenesten');
-        }
-
-        let responseData: any = {};
-        const rawText = await response.text();
-        try {
-          responseData = JSON.parse(rawText);
-        } catch {
-          responseData = { message: rawText };
-        }
-
-        if (response.ok) {
-          logEntry.status = 'sent';
-          logEntry.response = JSON.stringify(responseData.data || responseData);
-        } else {
-          const status = response.status;
-          logEntry.status = 'failed';
-
-          let errorMsg = responseData.error || responseData.message || rawText;
-          if (status === 401) {
-            errorMsg = 'Feil 401: Ugyldig GatewayAPI-nøkkel. Vennligst sjekk at tokenet er kopiert riktig fra GatewayAPI-dashbordet.';
-          } else if (status === 402) {
-            errorMsg = 'Feil 402: Kontoen mangler SMS-kreditter. Fyll på saldo hos GatewayAPI.com.';
-          } else if (status === 422) {
-            errorMsg = `Feil 422 (Ugyldig data): ${errorMsg}`;
-          }
-
-          logEntry.response = errorMsg;
-        }
-      } catch (err: any) {
-        logEntry.status = 'failed';
-        logEntry.response = err.message || 'Ukjent nettverksfeil mot SMS-tjenesten';
+      // Endepunkter:
+      // 1. /api/send-sms (Firebase Hosting rewrite til Cloud Function sendSms)
+      // 2. Direkte Cloud Function URL (i us-central1) som fallback
+      // 3. /api/gatewayapi/rest/mtsms (kun aktiv lokalt med Vite dev-server proxy dersom apiKey finnes)
+      const endpoints: string[] = [];
+      if (isLocalHost && apiKey.length > 5) {
+        endpoints.push('/api/gatewayapi/rest/mtsms');
       }
-    } else {
-      // Simuleringsmodus når API-nøkkel ikke er lagt inn
-      logEntry.status = 'simulated';
-      logEntry.response = 'Simulert SMS sendt vellykket (GatewayAPI-nøkkel ikke angitt i innstillinger)';
+      endpoints.push('/api/send-sms');
+      endpoints.push('https://us-central1-tid1din.cloudfunctions.net/sendSms');
+
+      let response: Response | null = null;
+      let lastError: any = null;
+
+      for (const url of endpoints) {
+        try {
+          if (url.includes('/api/gatewayapi')) {
+            // Direkte dev-proxy til GatewayAPI (lokalt)
+            response = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Basic ' + btoa(`${apiKey}:`)
+              },
+              body: JSON.stringify({
+                sender: cleanSender,
+                message: message,
+                recipients: [{ msisdn: msisdnNumber }]
+              })
+            });
+          } else {
+            // Firebase Cloud Function (produksjon / server)
+            response = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+              },
+              body: JSON.stringify({
+                toPhone: toPhone,
+                phone: toPhone,
+                to: toPhone,
+                message: message,
+                text: message,
+                sender: cleanSender,
+                ...(apiKey ? { apiKey } : {})
+              })
+            });
+          }
+
+          if (response && (response.ok || response.status === 400 || response.status === 401 || response.status === 402 || response.status === 422)) {
+            break;
+          }
+        } catch (e) {
+          lastError = e;
+        }
+      }
+
+      if (!response) {
+        throw lastError || new Error('Nettverksfeil mot SMS-tjenesten');
+      }
+
+      let responseData: any = {};
+      const rawText = await response.text();
+      try {
+        responseData = JSON.parse(rawText);
+      } catch {
+        responseData = { message: rawText };
+      }
+
+      if (response.ok) {
+        logEntry.status = 'sent';
+        logEntry.response = JSON.stringify(responseData.data || responseData);
+      } else {
+        const status = response.status;
+        logEntry.status = 'failed';
+
+        let errorMsg = responseData.error || responseData.message || rawText;
+        if (status === 401) {
+          errorMsg = 'Feil 401: Ugyldig GatewayAPI-nøkkel. Vennligst sjekk at tokenet er kopiert riktig fra GatewayAPI-dashbordet.';
+        } else if (status === 402) {
+          errorMsg = 'Feil 402: Kontoen mangler SMS-kreditter. Fyll på saldo hos GatewayAPI.com.';
+        } else if (status === 422) {
+          errorMsg = `Feil 422 (Ugyldig data): ${errorMsg}`;
+        }
+
+        logEntry.response = errorMsg;
+      }
+    } catch (err: any) {
+      logEntry.status = 'failed';
+      logEntry.response = err.message || 'Ukjent nettverksfeil mot SMS-tjenesten';
     }
 
     await dbService.logSms(logEntry);
@@ -223,8 +219,21 @@ export class SmsService {
   /**
    * Sender bookingbekreftelse ved nyopprettet time
    */
-  public async sendBookingConfirmation(appointment: Appointment): Promise<SmsLog | null> {
-    if (!appointment.clientPhone) return null;
+  public async sendBookingConfirmation(appointment: Appointment): Promise<SmsLog> {
+    if (!appointment.clientPhone || !appointment.clientPhone.trim()) {
+      const logEntry: SmsLog = {
+        id: 'sms_err_' + Date.now(),
+        timestamp: new Date().toISOString(),
+        recipientPhone: '',
+        message: 'Bekreftelse kunne ikke sendes: Klienten mangler mobilnummer.',
+        type: 'booking',
+        appointmentId: appointment.id,
+        status: 'failed',
+        response: 'Klienten mangler mobilnummer. Vennligst legg inn mobilnummer for å sende SMS.'
+      };
+      await dbService.logSms(logEntry);
+      return logEntry;
+    }
     const settings = await dbService.getSmsSettings();
     const message = this.formatMessage(settings.bookingTemplate, appointment);
     return await this.sendSms(appointment.clientPhone, message, 'booking', appointment.id);

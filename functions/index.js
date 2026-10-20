@@ -1,5 +1,10 @@
 const functions = require("firebase-functions");
+const admin = require("firebase-admin");
 const cors = require("cors")({ origin: true });
+
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
 
 /**
  * Cloud Function: sendSms
@@ -79,6 +84,24 @@ exports.sendSms = functions.https.onRequest((req, res) => {
           }
         } else if (auth.startsWith("Bearer ")) {
           apiKey = auth.substring(7);
+        }
+      }
+
+      // Hvis apiKey ikke er sendt i body eller header, prøv å hente den fra Firestore (smsSettings/default)
+      if (!apiKey) {
+        try {
+          const docSnap = await admin.firestore().collection("smsSettings").doc("default").get();
+          if (docSnap.exists) {
+            const data = docSnap.data() || {};
+            if (data.apiKey) {
+              apiKey = data.apiKey;
+            }
+            if (!sender && data.sender) {
+              sender = data.sender;
+            }
+          }
+        } catch (dbErr) {
+          console.warn("Kunne ikke hente smsSettings fra Firestore:", dbErr);
         }
       }
 

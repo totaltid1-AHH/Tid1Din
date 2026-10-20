@@ -53,6 +53,7 @@ export const SuperAdminPanel: React.FC = () => {
   const [testPhone, setTestPhone] = useState('91234567');
   const [testMessage, setTestMessage] = useState('Test-SMS fra Tid1Din.');
   const [testStatus, setTestStatus] = useState<string | null>(null);
+  const [showSmsApiKey, setShowSmsApiKey] = useState(false);
 
   const [isNewAdminOpen, setIsNewAdminOpen] = useState(false);
   const [newAdminName, setNewAdminName] = useState('');
@@ -1173,19 +1174,57 @@ export const SuperAdminPanel: React.FC = () => {
             </button>
           </div>
 
-          {/* Notis om GatewayAPI Nøkkel */}
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Info className="w-4 h-4 text-sky-600 flex-shrink-0" />
-              <span className="text-slate-600">
-                GatewayAPI REST-nøkkel (tilkobling) administreres under <strong>Super-admin</strong>.
+          {/* GatewayAPI REST-nøkkel og tilkoblingsstatus */}
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-sky-600 flex-shrink-0" />
+                <span className="font-bold text-slate-800">
+                  GatewayAPI REST-nøkkel (API Token)
+                </span>
+              </div>
+              <span className={`px-2.5 py-1 rounded text-[10px] font-bold self-start sm:self-auto ${
+                smsSettings.apiKey && smsSettings.apiKey.trim().length > 5
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  : 'bg-amber-100 text-amber-800 border border-amber-300'
+              }`}>
+                {smsSettings.apiKey && smsSettings.apiKey.trim().length > 5
+                  ? '🟢 API-forbindelse aktiv'
+                  : '⚠️ Mangler API-nøkkel (SMS feiler)'}
               </span>
             </div>
-            <span className={`px-2 py-0.5 rounded text-[10px] font-bold self-start sm:self-auto ${
-              smsSettings.apiKey ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-            }`}>
-              {smsSettings.apiKey ? 'API-forbindelse aktiv' : 'Simulert testmodus'}
-            </span>
+
+            <div>
+              <div className="relative flex items-center">
+                <input
+                  type={showSmsApiKey ? 'text' : 'password'}
+                  value={smsSettings.apiKey || ''}
+                  onChange={(e) => setSmsSettings({ ...smsSettings, apiKey: e.target.value })}
+                  placeholder="Lim inn GatewayAPI API-Token her..."
+                  className="w-full px-3 py-2 pr-10 rounded-xl border border-slate-300 text-xs font-mono bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSmsApiKey(!showSmsApiKey)}
+                  className="absolute right-2.5 p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  title={showSmsApiKey ? 'Skjul nøkkel' : 'Vis nøkkel'}
+                >
+                  {showSmsApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1.5 leading-normal">
+                Nøkkelen opprettes på{' '}
+                <a
+                  href="https://gatewayapi.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sky-600 underline font-medium hover:text-sky-800"
+                >
+                  GatewayAPI.com
+                </a>{' '}
+                under <em>API &gt; API Keys</em>. Husk å trykke <strong>Lagre oppsett</strong> for å ta den i bruk.
+              </p>
+            </div>
           </div>
 
           <div className="space-y-3.5 text-xs">
