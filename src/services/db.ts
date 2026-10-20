@@ -39,12 +39,16 @@ export const DEFAULT_COMPANY: Company = {
   id: 'comp_hovden',
   name: 'Hovden Terapi',
   treatmentPlace: 'Hovden',
+  contactPerson: 'Dr. Kari Nordmann',
+  contactPhone: '90011000',
+  contactEmail: 'post@hovdenterapi.no',
   address: 'Hovdenvegen 1, 4755 Hovden',
   phone: '90011000',
   email: 'post@hovdenterapi.no',
   hovedadminUid: 'u_hovedadmin',
   hovedadminName: 'Dr. Kari Nordmann',
   hovedadminEmail: 'hovedadmin@dintid.no',
+  hovedadminUsername: 'hovedadmin',
   isActive: true,
   createdAt: '2026-01-01T00:00:00.000Z'
 };

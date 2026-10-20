@@ -8,9 +8,13 @@ export interface Company {
   address?: string;
   phone?: string;
   email?: string;
+  contactPerson?: string; // Kontaktperson for bedriften
+  contactPhone?: string;
+  contactEmail?: string;
   hovedadminUid?: string; // UID til tildelt hovedadmin
   hovedadminName?: string;
   hovedadminEmail?: string;
+  hovedadminUsername?: string; // Brukernavn for hovedadmin
   isActive: boolean;
   createdAt: string;
   updatedAt?: string;

@@ -90,29 +90,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
     if (currentUser.role === 'superadmin') {
       return (
         <div className="px-3 pt-3 pb-2">
-          <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
-            <div className="flex items-center justify-between text-[10px] text-indigo-400 uppercase font-bold tracking-wider">
-              <span className="flex items-center gap-1">
-                <Building2 className="w-3 h-3" />
-                Aktiv bedrift
-              </span>
-              <span className="text-[9px] bg-indigo-950 text-indigo-300 px-1.5 py-0.2 rounded border border-indigo-800/60">
-                Super
-              </span>
-            </div>
-            <div className="relative">
-              <select
-                value={activeCompany?.id || ''}
-                onChange={(e) => switchCompany(e.target.value)}
-                className="w-full bg-slate-950 text-white text-xs font-bold rounded-lg pl-2 pr-7 py-2 border border-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 appearance-none cursor-pointer truncate"
-              >
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} {c.treatmentPlace ? `(${c.treatmentPlace})` : ''}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-2.5 pointer-events-none" />
+          <div className="p-2.5 rounded-xl bg-indigo-950/40 border border-indigo-800/40 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-purple-400 flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider">Super-admin portal</p>
+              <p className="text-xs text-white font-semibold truncate">Flerbedriftsadmin</p>
             </div>
           </div>
         </div>
@@ -136,12 +118,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
     const isSuperAdmin = currentUser.role === 'superadmin';
     const isMainAdmin = currentUser.role === 'hovedadmin';
     const isAdmin = currentUser.role === 'admin';
-    const isStaffOrAdmin = isSuperAdmin || isMainAdmin || isAdmin;
+    const isStaffOrAdmin = isMainAdmin || isAdmin;
 
-    return (
-      <nav className="space-y-1.5 px-3">
-        {/* Bedrifter / Flerbedriftsadministrasjon (Kun for super-admin) */}
-        {isSuperAdmin && (
+    // Super-admin skal KUN se bedriftsoversikten og ikke klinikkfunksjoner
+    if (isSuperAdmin) {
+      return (
+        <nav className="space-y-1.5 px-3">
           <button
             onClick={() => handleNavClick('companies')}
             className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-bold transition-all ${
@@ -150,11 +132,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
                 : 'text-indigo-300 hover:text-white hover:bg-slate-900 border border-indigo-900/40'
             }`}
           >
-            <Building2 className="w-4.5 h-4.5 flex-shrink-0 text-indigo-400" />
+            <Building2 className="w-4.5 h-4.5 flex-shrink-0 text-indigo-300" />
             <span>Bedrifter</span>
           </button>
-        )}
+        </nav>
+      );
+    }
 
+    return (
+      <nav className="space-y-1.5 px-3">
         <button
           onClick={() => handleNavClick('dashboard')}
           className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
@@ -218,21 +204,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
           >
             <Settings className="w-4.5 h-4.5 flex-shrink-0" />
             <span>Klinikk</span>
-          </button>
-        )}
-
-        {/* Global system og API innstillinger (Kun for superadmin) */}
-        {isSuperAdmin && (
-          <button
-            onClick={() => handleNavClick('super_admin')}
-            className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-bold transition-all ${
-              currentTab === 'super_admin'
-                ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/30'
-                : 'text-rose-400 hover:text-rose-300 hover:bg-slate-900'
-            }`}
-          >
-            <ShieldAlert className="w-4.5 h-4.5 flex-shrink-0" />
-            <span>System & API</span>
           </button>
         )}
       </nav>
@@ -354,11 +325,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
           onClick={() => handleNavClick(currentUser?.role === 'superadmin' ? 'companies' : 'dashboard')}
         >
           <span className="text-xl font-black tracking-tight text-white">Tid1Din</span>
-          {activeCompany && (
+          {currentUser?.role === 'superadmin' ? (
+            <span className="text-xs text-purple-400 font-semibold truncate max-w-[130px]">
+              &bull; Super-admin
+            </span>
+          ) : activeCompany ? (
             <span className="text-xs text-slate-400 font-normal truncate max-w-[120px]">
               &bull; {activeCompany.treatmentPlace || activeCompany.name}
             </span>
-          )}
+          ) : null}
         </div>
 
         <div className="flex items-center gap-2">
