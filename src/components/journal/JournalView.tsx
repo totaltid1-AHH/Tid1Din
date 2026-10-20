@@ -41,7 +41,8 @@ import {
   List,
   ListOrdered,
   FileSpreadsheet,
-  Check
+  Check,
+  Trash2
 } from 'lucide-react';
 import { format, addDays } from 'date-fns';
 import { nb } from 'date-fns/locale';
@@ -316,7 +317,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
     return list;
   }, [entries, journalSearchQuery, sortOrder]);
 
-  // Tidslinjeliste over samtaletimer
+  // Tidslinjeliste over samtaletimer (avlyste timer uten notat fjernes automatisk)
   const timelineSessions = useMemo(() => {
     const sessionMap = new Map<string, {
       key: string;
@@ -328,32 +329,38 @@ export const JournalView: React.FC<JournalViewProps> = ({
       hasNote: boolean;
     }>();
 
-    appointments.forEach(apt => {
-      const key = `apt_${apt.id}`;
-      const matchedEntry = entries.find(e => e.appointmentId === apt.id);
-      sessionMap.set(key, {
-        key,
-        appointment: apt,
-        entry: matchedEntry,
-        date: apt.date,
-        time: apt.startTime,
-        title: `Samtaletime (${apt.isOnline ? 'Online' : 'Oppmøte'})`,
-        hasNote: !!matchedEntry
+    // 1. Legg kun til aktive (ikke avlyste) avtaler
+    appointments
+      .filter(apt => apt.status !== 'cancelled')
+      .forEach(apt => {
+        const key = `apt_${apt.id}`;
+        const matchedEntry = entries.find(e => e.appointmentId === apt.id);
+        sessionMap.set(key, {
+          key,
+          appointment: apt,
+          entry: matchedEntry,
+          date: apt.date,
+          time: apt.startTime,
+          title: `Samtaletime (${apt.isOnline ? 'Online' : 'Oppmøte'})`,
+          hasNote: !!matchedEntry
+        });
       });
-    });
 
+    // 2. Legg til faktiske journalnotater (både frittstående og de som evt. tilhørte en avlyst time)
     entries.forEach(entry => {
       const linkedApt = entry.appointmentId ? appointments.find(a => a.id === entry.appointmentId) : null;
-      if (!linkedApt) {
+      // Hvis timen ikke finnes eller timen ble avlyst, vis notatet som et selvstendig journalnotat
+      if (!linkedApt || linkedApt.status === 'cancelled') {
         const d = entry.sessionDate || safeFormatDate(entry.createdAt, 'yyyy-MM-dd');
         const t = entry.sessionTime || safeFormatDate(entry.createdAt, 'HH:mm');
         const key = `entry_${entry.id}`;
         sessionMap.set(key, {
           key,
           entry,
+          appointment: linkedApt || undefined,
           date: d,
           time: t,
-          title: 'Journalnotat',
+          title: linkedApt?.status === 'cancelled' ? 'Journalnotat (avlyst time)' : 'Journalnotat',
           hasNote: true
         });
       }
@@ -474,6 +481,27 @@ export const JournalView: React.FC<JournalViewProps> = ({
 
     if (journalScrollContainerRef.current) {
       journalScrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleDeleteEntry = async (entryId: string) => {
+    if (!window.confirm('Er du sikker på at du vil slette dette journalnotatet? Handlingen kan ikke angres.')) {
+      return;
+    }
+    try {
+      await dbService.deleteJournalEntry(entryId);
+      if (currentUser && selectedClient) {
+        await dbService.logAction(
+          { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
+          'delete_journal',
+          `Slettet journalnotat for klient #${selectedClient.customerNumber || selectedClient.displayName}`
+        );
+      }
+      if (selectedClient) {
+        await loadJournalsAndAppointments(selectedClient.uid);
+      }
+    } catch (e: any) {
+      alert('Kunne ikke slette journalnotat: ' + e.message);
     }
   };
 
@@ -1449,11 +1477,13 @@ export const JournalView: React.FC<JournalViewProps> = ({
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs bg-white text-slate-800 outline-none focus:border-sky-500"
                   >
                     <option value="">-- Ingen / Egendefinert tidspunkt --</option>
-                    {appointments.map((apt) => (
-                      <option key={apt.id} value={apt.id}>
-                        {apt.date} kl. {apt.startTime} ({apt.isOnline ? 'Online' : 'Oppmøte'})
-                      </option>
-                    ))}
+                    {appointments
+                      .filter(a => a.status !== 'cancelled' || a.id === selectedAppointmentId)
+                      .map((apt) => (
+                        <option key={apt.id} value={apt.id}>
+                          {apt.date} kl. {apt.startTime} ({apt.isOnline ? 'Online' : 'Oppmøte'}{apt.status === 'cancelled' ? ' - Avlyst' : ''})
+                        </option>
+                      ))}
                   </select>
                 </div>
 
@@ -1866,9 +1896,19 @@ export const JournalView: React.FC<JournalViewProps> = ({
                         </h3>
 
                         {matchedApt && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-800 border border-indigo-200">
-                            {matchedApt.isOnline ? <Video className="w-3 h-3" /> : <MapPin className="w-3 h-3" />}
-                            <span>Tilknyttet samtaletime ({matchedApt.isOnline ? 'Online' : 'Oppmøte'})</span>
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                            matchedApt.status === 'cancelled' 
+                              ? 'bg-rose-50 text-rose-800 border border-rose-200' 
+                              : 'bg-indigo-50 text-indigo-800 border border-indigo-200'
+                          }`}>
+                            {matchedApt.status === 'cancelled' ? (
+                              <span>Tilknyttet avlyst time</span>
+                            ) : (
+                              <>
+                                {matchedApt.isOnline ? <Video className="w-3 h-3" /> : <MapPin className="w-3 h-3" />}
+                                <span>Tilknyttet samtaletime ({matchedApt.isOnline ? 'Online' : 'Oppmøte'})</span>
+                              </>
+                            )}
                           </span>
                         )}
                       </div>
@@ -1896,13 +1936,23 @@ export const JournalView: React.FC<JournalViewProps> = ({
                         )}
 
                         {canEdit && (
-                          <button
-                            onClick={() => handleStartEdit(entry)}
-                            className="p-1.5 text-slate-600 hover:text-sky-700 hover:bg-sky-50 rounded-lg border border-slate-200 transition-colors cursor-pointer"
-                            title="Rediger notat"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handleStartEdit(entry)}
+                              className="p-1.5 text-slate-600 hover:text-sky-700 hover:bg-sky-50 rounded-lg border border-slate-200 transition-colors cursor-pointer"
+                              title="Rediger notat"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteEntry(entry.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-slate-200 transition-colors cursor-pointer"
+                              title="Slett notat"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>

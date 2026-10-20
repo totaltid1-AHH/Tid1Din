@@ -24,7 +24,8 @@ import {
   Video,
   MapPin,
   CheckCircle2,
-  MessageSquare
+  MessageSquare,
+  Trash2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { nb } from 'date-fns/locale';
@@ -139,6 +140,25 @@ export const JournalModal: React.FC<JournalModalProps> = ({
     setSessionDate(entry.sessionDate || format(new Date(entry.createdAt), 'yyyy-MM-dd'));
     setSessionTime(entry.sessionTime || format(new Date(entry.createdAt), 'HH:mm'));
     setIsEditing(true);
+  };
+
+  const handleDeleteEntry = async (entryId: string) => {
+    if (!window.confirm('Er du sikker på at du vil slette dette journalnotatet? Handlingen kan ikke angres.')) {
+      return;
+    }
+    try {
+      await dbService.deleteJournalEntry(entryId);
+      if (currentUser) {
+        await dbService.logAction(
+          { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
+          'delete_journal',
+          `Slettet journalnotat for klient #${client.customerNumber || client.displayName}`
+        );
+      }
+      await loadJournalsAndAppointments();
+    } catch (e: any) {
+      alert('Kunne ikke slette journalnotat: ' + e.message);
+    }
   };
 
   const handleAppointmentSelect = (aptId: string) => {
@@ -333,11 +353,13 @@ export const JournalModal: React.FC<JournalModalProps> = ({
                     className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-800 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-sky-500"
                   >
                     <option value="">-- Ingen / Egendefinert tid --</option>
-                    {clientAppointments.map((apt) => (
-                      <option key={apt.id} value={apt.id}>
-                        {apt.date} kl. {apt.startTime} ({apt.isOnline ? 'Online' : 'Fysisk'})
-                      </option>
-                    ))}
+                    {clientAppointments
+                      .filter(a => a.status !== 'cancelled' || a.id === selectedAppointmentId)
+                      .map((apt) => (
+                        <option key={apt.id} value={apt.id}>
+                          {apt.date} kl. {apt.startTime} ({apt.isOnline ? 'Online' : 'Fysisk'}{apt.status === 'cancelled' ? ' - Avlyst' : ''})
+                        </option>
+                      ))}
                   </select>
                 </div>
 
@@ -499,9 +521,19 @@ export const JournalModal: React.FC<JournalModalProps> = ({
                                 </span>
 
                                 {matchedApt && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                                    {matchedApt.isOnline ? <Video className="w-3 h-3" /> : <MapPin className="w-3 h-3" />}
-                                    <span>Tilknyttet time ({matchedApt.isOnline ? 'Online' : 'Oppmøte'})</span>
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                    matchedApt.status === 'cancelled'
+                                      ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                      : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                  }`}>
+                                    {matchedApt.status === 'cancelled' ? (
+                                      <span>Tilknyttet avlyst time</span>
+                                    ) : (
+                                      <>
+                                        {matchedApt.isOnline ? <Video className="w-3 h-3" /> : <MapPin className="w-3 h-3" />}
+                                        <span>Tilknyttet time ({matchedApt.isOnline ? 'Online' : 'Oppmøte'})</span>
+                                      </>
+                                    )}
                                   </span>
                                 )}
                               </div>
@@ -514,13 +546,23 @@ export const JournalModal: React.FC<JournalModalProps> = ({
                                 )}
 
                                 {canEdit && (
-                                  <button
-                                    onClick={() => handleStartEdit(entry)}
-                                    className="p-1.5 text-slate-400 hover:text-sky-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
-                                    title="Rediger notat"
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                  </button>
+                                  <>
+                                    <button
+                                      onClick={() => handleStartEdit(entry)}
+                                      className="p-1.5 text-slate-400 hover:text-sky-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                                      title="Rediger notat"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    <button
+                                      onClick={() => handleDeleteEntry(entry.id)}
+                                      className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
+                                      title="Slett notat"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
                                 )}
 
                                 {entry.revisionHistory && entry.revisionHistory.length > 0 && (
