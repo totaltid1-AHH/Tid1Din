@@ -16,7 +16,13 @@ export class SmsService {
       therapistName?: string;
     }
   ): string {
-    const cancelUrl = cancellationLink || `${window.location.origin}/avbestill/${appointment.id}`;
+    const isLocalhost = typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' || 
+      window.location.hostname === '127.0.0.1' ||
+      window.location.port === '5173'
+    );
+    const baseUrl = isLocalhost ? 'https://tid1din.web.app' : (typeof window !== 'undefined' ? window.location.origin : 'https://tid1din.web.app');
+    const cancelUrl = cancellationLink || `${baseUrl}/avbestill/${appointment.id}`;
     const meetUrl = appointment.isOnline && appointment.meetingLink 
       ? `Møtelenke: ${appointment.meetingLink}` 
       : '';
@@ -49,7 +55,7 @@ export class SmsService {
       formattedNewDate = `${d}.${m}.${y}`;
     }
 
-    return template
+    const rawResult = template
       .replace(/{kunde}/g, appointment.clientName || 'klient')
       .replace(/{kundenummer}/g, String(appointment.clientNumber || ''))
       .replace(/{dato}/g, formattedDate)
@@ -63,6 +69,12 @@ export class SmsService {
       .replace(/{avbestillingslenke}/g, cancelUrl)
       .replace(/{motelenke}/g, meetUrl)
       .trim();
+
+    // Erstatt typografiske spesialtegn (en-dash, em-dash, anførselstegn) med standard GSM-tegn
+    return rawResult
+      .replace(/[\u2013\u2014]/g, '-')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"');
   }
 
   /**
