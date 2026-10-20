@@ -47,10 +47,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [smsModalTab, setSmsModalTab] = useState<'delay' | 'reschedule' | 'templates'>('delay');
   const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
 
-  const canViewName = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientName !== false;
-  const canViewPhone = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientPhone !== false;
-  const canViewEmail = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientEmail !== false;
-  const canEditJournals = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canEditJournals !== false;
+  const canViewName = (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') || currentUser?.permissions?.canViewClientName !== false;
+  const canViewPhone = (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') || currentUser?.permissions?.canViewClientPhone !== false;
+  const canViewEmail = (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') || currentUser?.permissions?.canViewClientEmail !== false;
+  const canEditJournals = (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') || currentUser?.permissions?.canEditJournals !== false;
 
   useEffect(() => {
     loadData();

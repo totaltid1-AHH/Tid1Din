@@ -498,7 +498,7 @@ export const SuperAdminPanel: React.FC = () => {
             <span className="hidden sm:inline">Terapeuter & Administratorer ({therapistList.length})</span>
           </button>
 
-          {currentUser?.role === 'hovedadmin' && (
+          {(currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') && (
             <button
               onClick={() => setActiveSubTab('sms')}
               className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-all flex items-center gap-1.5 flex-shrink-0 ${
@@ -641,7 +641,7 @@ export const SuperAdminPanel: React.FC = () => {
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5 flex-wrap">
                           {/* Hurtigknapp for å sette eller fjerne Hovedadmin */}
-                          {currentUser?.role === 'hovedadmin' && therapist.uid !== currentUser.uid && (
+                          {(currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') && therapist.uid !== currentUser.uid && (
                             therapist.role !== 'hovedadmin' ? (
                               <button
                                 type="button"
@@ -767,7 +767,7 @@ export const SuperAdminPanel: React.FC = () => {
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
                 {/* 1. Terapeutens navn */}
-                {currentUser?.role === 'hovedadmin' ? (
+                {(currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') ? (
                   <select
                     id="select-therapist-settings"
                     aria-label="Terapeut"
@@ -1241,7 +1241,7 @@ export const SuperAdminPanel: React.FC = () => {
       })()}
 
       {/* FANE: SMS-INNSTILLINGER (KUN HOVEDADMIN) */}
-      {activeSubTab === 'sms' && currentUser?.role === 'hovedadmin' && smsSettings && (
+      {activeSubTab === 'sms' && (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') && smsSettings && (
         <div className="bg-white rounded-none sm:rounded-2xl p-3 sm:p-5 border-y sm:border border-slate-200 shadow-xs space-y-4 w-full">
           <div className="flex items-center justify-between pb-2 border-b border-slate-100">
             <div>
@@ -1614,7 +1614,7 @@ export const SuperAdminPanel: React.FC = () => {
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500 text-xs bg-white font-medium"
                 >
                   <option value="admin">Terapeut / Administrator</option>
-                  {currentUser?.role === 'hovedadmin' && (
+                  {(currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') && (
                     <option value="hovedadmin">Hovedadministrator (Full klinikk-tilgang)</option>
                   )}
                 </select>
@@ -1907,7 +1907,7 @@ export const SuperAdminPanel: React.FC = () => {
               </div>
 
               {/* Rolle (kun Hovedadmin kan endre) */}
-              {currentUser?.role === 'hovedadmin' && (
+              {(currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') && (
                 <div className="space-y-1.5 pt-1 border-t border-slate-100">
                   <label className="block text-xs font-bold text-slate-700 uppercase">
                     Brukertype / Rolle

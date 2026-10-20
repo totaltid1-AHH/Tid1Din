@@ -62,11 +62,11 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const canViewName = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientName !== false;
-  const canViewPhone = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientPhone !== false;
-  const canViewEmail = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientEmail !== false;
-  const canEditJournals = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canEditJournals !== false;
-  const isSuperAdmin = currentUser?.role === 'hovedadmin';
+  const canViewName = (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') || currentUser?.permissions?.canViewClientName !== false;
+  const canViewPhone = (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') || currentUser?.permissions?.canViewClientPhone !== false;
+  const canViewEmail = (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') || currentUser?.permissions?.canViewClientEmail !== false;
+  const canEditJournals = (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') || currentUser?.permissions?.canEditJournals !== false;
+  const isSuperAdmin = (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin');
 
   useEffect(() => {
     loadClients();

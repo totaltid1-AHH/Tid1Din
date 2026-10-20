@@ -1,4 +1,20 @@
-export type UserRole = 'hovedadmin' | 'admin' | 'client';
+export type UserRole = 'superadmin' | 'hovedadmin' | 'admin' | 'client';
+
+export interface Company {
+  id: string; // f.eks. "comp_hovden"
+  name: string; // f.eks. "Hovden Terapi"
+  orgNumber?: string;
+  treatmentPlace: string; // Navn på behandlingssted/klinikk som vises i SMS og varsler (f.eks. "Hovden")
+  address?: string;
+  phone?: string;
+  email?: string;
+  hovedadminUid?: string; // UID til tildelt hovedadmin
+  hovedadminName?: string;
+  hovedadminEmail?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
 
 export interface AdminPermissions {
   canViewClientName: boolean;
@@ -15,6 +31,7 @@ export interface UserProfile {
   password?: string; // Lagret som klartekst i demo; bytt til hash i produksjon
   role: UserRole;
   displayName: string;
+  companyId?: string; // Tilknyttet bedrift/klinikk (valgfritt for superadmin)
   phone?: string;
   address?: string;
   birthDate?: string;
@@ -45,6 +62,7 @@ export interface DailySchedule {
 
 export interface WorkingHoursConfig {
   id: string;
+  companyId?: string;
   therapistId?: string;
   workDays: number[]; // 1=Mandag, 2=Tirsdag, etc.
   startTime: string; // f.eks. "08:00"
@@ -67,6 +85,7 @@ export interface WorkingHoursConfig {
 
 export interface Holiday {
   id: string;
+  companyId?: string;
   therapistId?: string; // Hvis tom/udefinert, gjelder alle/klinikk
   title: string;
   startDate: string; // YYYY-MM-DD
@@ -78,6 +97,7 @@ export type AppointmentStatus = 'confirmed' | 'completed' | 'cancelled';
 
 export interface Appointment {
   id: string;
+  companyId?: string;
   clientId: string;
   clientNumber: number;
   clientName: string;
@@ -112,6 +132,7 @@ export interface JournalRevision {
 
 export interface JournalEntry {
   id: string;
+  companyId?: string;
   clientId: string;
   authorId: string;
   authorName: string;
@@ -129,6 +150,7 @@ export interface JournalEntry {
 
 export interface SmsTemplate {
   id: string;
+  companyId?: string;
   title: string;
   message: string;
   category?: 'delay' | 'reschedule' | 'info' | 'custom';
@@ -137,6 +159,7 @@ export interface SmsTemplate {
 
 export interface SmsSettings {
   id: string;
+  companyId?: string;
   apiKey: string;
   sender: string;
   treatmentPlace?: string; // Navn på behandlingssted/klinikk som vises i SMS og varsler
@@ -150,6 +173,7 @@ export interface SmsSettings {
 
 export interface SmsLog {
   id: string;
+  companyId?: string;
   timestamp: string;
   recipientPhone: string;
   message: string;
@@ -178,10 +202,15 @@ export type AuditAction =
   | 'export_gdpr_data'
   | 'update_admin_permissions'
   | 'update_working_hours'
-  | 'update_sms_settings';
+  | 'update_sms_settings'
+  | 'create_company'
+  | 'update_company'
+  | 'delete_company'
+  | 'switch_company';
 
 export interface SystemAuditLog {
   id: string;
+  companyId?: string;
   timestamp: string;
   userId: string;
   userEmail: string;

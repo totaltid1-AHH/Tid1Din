@@ -66,7 +66,7 @@ export const JournalModal: React.FC<JournalModalProps> = ({
   const [selectedRevisionHistory, setSelectedRevisionHistory] = useState<JournalRevision[] | null>(null);
   const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
 
-  const canEdit = currentUser?.role === 'hovedadmin' || 
+  const canEdit = (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') || 
     (currentUser?.role === 'admin' && currentUser.permissions?.canEditJournals);
 
   useEffect(() => {

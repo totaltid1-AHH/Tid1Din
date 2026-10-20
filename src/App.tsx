@@ -12,12 +12,24 @@ import { AdminDashboard } from './components/dashboard/AdminDashboard';
 import { ClientListView } from './components/clients/ClientListView';
 import { SuperAdminPanel } from './components/admin/SuperAdminPanel';
 import { SuperAdminSettingsView } from './components/admin/SuperAdminSettingsView';
+import { SuperAdminCompaniesView } from './components/admin/SuperAdminCompaniesView';
 import { JournalView } from './components/journal/JournalView';
-import { ShieldCheck, ShieldAlert, Lock, Calendar as CalendarIcon, LayoutDashboard, Users, Settings, BookOpen } from 'lucide-react';
+import { 
+  ShieldCheck, 
+  ShieldAlert, 
+  Lock, 
+  Calendar as CalendarIcon, 
+  LayoutDashboard, 
+  Users, 
+  Settings, 
+  BookOpen,
+  Building2
+} from 'lucide-react';
 
 const AppContent: React.FC = () => {
   const { 
     currentUser, 
+    activeCompany,
     isLoading, 
     is2FASetupModalOpen, 
     setup2FAUser, 
@@ -28,10 +40,17 @@ const AppContent: React.FC = () => {
   const [bookingInitialDate, setBookingInitialDate] = useState<string | undefined>(undefined);
   const [selectedJournalClientId, setSelectedJournalClientId] = useState<string | null>(null);
 
+  // Superadmin lander som standard på "Bedrifter" ved innlogging
+  useEffect(() => {
+    if (currentUser?.role === 'superadmin' && currentTab === 'dashboard') {
+      setCurrentTab('companies');
+    }
+  }, [currentUser?.role, currentUser?.uid]);
+
   // Sikre at dersom rollen endres til 'client', blir eventuelle admin-faner automatisk tilbakestilt til 'dashboard'
   useEffect(() => {
     if (currentUser?.role === 'client') {
-      if (['clients', 'journal', 'admin_settings', 'super_admin'].includes(currentTab)) {
+      if (['clients', 'journal', 'admin_settings', 'super_admin', 'companies'].includes(currentTab)) {
         setCurrentTab('dashboard');
       }
     }
@@ -59,12 +78,13 @@ const AppContent: React.FC = () => {
         <TwoFactorModal />
         <LoginView />
         <footer className="py-3 text-center text-xs text-slate-400 border-t border-slate-200">
-          Tid1Din &bull; Sikker kundeoppfølging & booking
+          Tid1Din &bull; Sikker flerbedriftsapp for kundeoppfølging & booking
         </footer>
       </div>
     );
   }
 
+  const isStaffOrAdmin = currentUser.role === 'superadmin' || currentUser.role === 'hovedadmin' || currentUser.role === 'admin';
   const isJournalTab = currentTab === 'journal';
 
   return (
@@ -84,9 +104,28 @@ const AppContent: React.FC = () => {
       {/* Svart sidefeltmeny (venstre side på desktop, topplinje + skuff på mobil/iPad stående) */}
       <Sidebar currentTab={currentTab} setCurrentTab={handleNavTab} />
 
+      {/* Super-admin statusbanner når man er inne i en spesifikk klinikk */}
+      {currentUser.role === 'superadmin' && activeCompany && currentTab !== 'companies' && (
+        <div className="bg-indigo-950 text-indigo-100 px-3 sm:px-6 py-2 text-xs flex items-center justify-between border-b border-indigo-800/80">
+          <div className="flex items-center gap-2 truncate">
+            <Building2 className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+            <span className="truncate">
+              Aktiv klinikk: <strong className="text-white font-bold">{activeCompany.name}</strong> 
+              {activeCompany.treatmentPlace ? ` (${activeCompany.treatmentPlace})` : ''}
+            </span>
+          </div>
+          <button
+            onClick={() => handleNavTab('companies')}
+            className="text-[11px] font-bold text-indigo-300 hover:text-white underline whitespace-nowrap ml-3"
+          >
+            Se alle bedrifter &rarr;
+          </button>
+        </div>
+      )}
+
       {isJournalTab ? (
         <div className="w-full flex-1 flex flex-col overflow-hidden min-h-0">
-          {(currentUser.role === 'hovedadmin' || currentUser.role === 'admin') && (
+          {isStaffOrAdmin && (
             <JournalView 
               key={`journal_${selectedJournalClientId || 'all'}`}
               initialClientId={selectedJournalClientId}
@@ -98,6 +137,15 @@ const AppContent: React.FC = () => {
         <div className="w-full flex-1">
           {/* Mobil/iPad: full bredde, Desktop: max-w-7xl px-4. Padding i bunn sikrer at innhold ikke havner under den faste menyen */}
           <main className="w-full max-w-full lg:max-w-7xl lg:mx-auto px-0 sm:px-4 lg:px-8 py-0 sm:py-6 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8">
+            
+            {/* Flerbedriftsadministrasjon (Kun superadmin) */}
+            {currentTab === 'companies' && currentUser.role === 'superadmin' && (
+              <SuperAdminCompaniesView 
+                key={`companies_${currentUser.uid}`}
+                onSelectCompanyAndNavigate={(compId, targetTab) => handleNavTab(targetTab)}
+              />
+            )}
+
             {/* Fanevelging basert på aktiv fane og rolle */}
             {currentTab === 'calendar' && (
               currentUser.role === 'client' ? (
@@ -122,7 +170,7 @@ const AppContent: React.FC = () => {
               />
             )}
 
-            {currentTab === 'clients' && (currentUser.role === 'hovedadmin' || currentUser.role === 'admin') && (
+            {currentTab === 'clients' && isStaffOrAdmin && (
               <ClientListView 
                 key={`clients_${currentUser.uid}`}
                 onOpenJournal={(clientId) => {
@@ -132,11 +180,11 @@ const AppContent: React.FC = () => {
               />
             )}
 
-            {currentTab === 'admin_settings' && (currentUser.role === 'hovedadmin' || currentUser.role === 'admin') && (
+            {currentTab === 'admin_settings' && isStaffOrAdmin && (
               <SuperAdminPanel key={`settings_${currentUser.uid}`} />
             )}
 
-            {currentTab === 'super_admin' && currentUser.role === 'hovedadmin' && (
+            {currentTab === 'super_admin' && currentUser.role === 'superadmin' && (
               <SuperAdminSettingsView key={`super_${currentUser.uid}`} />
             )}
 
@@ -172,73 +220,116 @@ const AppContent: React.FC = () => {
         className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-2xl flex items-center justify-around px-1 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] w-full max-w-full"
         style={{ transform: 'translateZ(0)', WebkitTransform: 'translateZ(0)' }}
       >
-        <button
-          onClick={() => handleNavTab('dashboard')}
-          className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
-            currentTab === 'dashboard' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <LayoutDashboard className="w-5 h-5 mb-0.5 flex-shrink-0" />
-          <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Oversikt</span>
-        </button>
+        {currentUser.role === 'superadmin' ? (
+          <>
+            <button
+              onClick={() => handleNavTab('companies')}
+              className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
+                currentTab === 'companies' ? 'text-indigo-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Building2 className="w-5 h-5 mb-0.5 flex-shrink-0" />
+              <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Bedrifter</span>
+            </button>
 
-        <button
-          onClick={() => handleNavTab('calendar')}
-          className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
-            currentTab === 'calendar' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <CalendarIcon className="w-5 h-5 mb-0.5 flex-shrink-0" />
-          <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Kalender</span>
-        </button>
+            <button
+              onClick={() => handleNavTab('dashboard')}
+              className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
+                currentTab === 'dashboard' ? 'text-indigo-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <LayoutDashboard className="w-5 h-5 mb-0.5 flex-shrink-0" />
+              <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Oversikt</span>
+            </button>
 
+            <button
+              onClick={() => handleNavTab('calendar')}
+              className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
+                currentTab === 'calendar' ? 'text-indigo-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <CalendarIcon className="w-5 h-5 mb-0.5 flex-shrink-0" />
+              <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Kalender</span>
+            </button>
 
-        {(currentUser.role === 'hovedadmin' || currentUser.role === 'admin') && (
-          <button
-            onClick={() => handleNavTab('journal')}
-            className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
-              currentTab === 'journal' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <BookOpen className="w-5 h-5 mb-0.5 flex-shrink-0" />
-            <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Journal</span>
-          </button>
-        )}
+            <button
+              onClick={() => handleNavTab('journal')}
+              className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
+                currentTab === 'journal' ? 'text-indigo-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <BookOpen className="w-5 h-5 mb-0.5 flex-shrink-0" />
+              <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Journal</span>
+            </button>
 
-        {(currentUser.role === 'hovedadmin' || currentUser.role === 'admin') && (
-          <button
-            onClick={() => handleNavTab('clients')}
-            className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
-              currentTab === 'clients' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Users className="w-5 h-5 mb-0.5 flex-shrink-0" />
-            <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Klienter</span>
-          </button>
-        )}
+            <button
+              onClick={() => handleNavTab('clients')}
+              className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
+                currentTab === 'clients' ? 'text-indigo-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Users className="w-5 h-5 mb-0.5 flex-shrink-0" />
+              <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Klienter</span>
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => handleNavTab('dashboard')}
+              className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
+                currentTab === 'dashboard' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <LayoutDashboard className="w-5 h-5 mb-0.5 flex-shrink-0" />
+              <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Oversikt</span>
+            </button>
 
-        {(currentUser.role === 'hovedadmin' || currentUser.role === 'admin') && (
-          <button
-            onClick={() => handleNavTab('admin_settings')}
-            className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
-              currentTab === 'admin_settings' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Settings className="w-5 h-5 mb-0.5 flex-shrink-0" />
-            <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Klinikk</span>
-          </button>
-        )}
+            <button
+              onClick={() => handleNavTab('calendar')}
+              className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
+                currentTab === 'calendar' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <CalendarIcon className="w-5 h-5 mb-0.5 flex-shrink-0" />
+              <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Kalender</span>
+            </button>
 
-        {currentUser.role === 'hovedadmin' && (
-          <button
-            onClick={() => handleNavTab('super_admin')}
-            className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
-              currentTab === 'super_admin' ? 'text-rose-600 font-bold' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <ShieldAlert className="w-5 h-5 mb-0.5 flex-shrink-0" />
-            <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Super</span>
-          </button>
+            {isStaffOrAdmin && (
+              <button
+                onClick={() => handleNavTab('journal')}
+                className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
+                  currentTab === 'journal' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <BookOpen className="w-5 h-5 mb-0.5 flex-shrink-0" />
+                <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Journal</span>
+              </button>
+            )}
+
+            {isStaffOrAdmin && (
+              <button
+                onClick={() => handleNavTab('clients')}
+                className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
+                  currentTab === 'clients' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Users className="w-5 h-5 mb-0.5 flex-shrink-0" />
+                <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Klienter</span>
+              </button>
+            )}
+
+            {isStaffOrAdmin && (
+              <button
+                onClick={() => handleNavTab('admin_settings')}
+                className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
+                  currentTab === 'admin_settings' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Settings className="w-5 h-5 mb-0.5 flex-shrink-0" />
+                <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Klinikk</span>
+              </button>
+            )}
+          </>
         )}
       </nav>
 
@@ -255,7 +346,7 @@ const AppContent: React.FC = () => {
               </span>
             </div>
             <p className="text-slate-400">
-              Sikkert kundeoppfølgings- og bookingsystem
+              Sikkert flerbedrifts kundeoppfølgings- og bookingsystem
             </p>
           </div>
         </footer>

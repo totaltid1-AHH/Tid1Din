@@ -52,7 +52,7 @@ export const UserCalendarView: React.FC<UserCalendarViewProps> = ({ onNavigateTo
     (currentUser?.role !== 'client' || u.isActive !== false || !!u.leaveEndDate)
   );
 
-  const initialTherapistId = (currentUser?.role === 'admin' || currentUser?.role === 'hovedadmin')
+  const initialTherapistId = (currentUser?.role === 'admin' || (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin'))
     ? (availableCachedTherapists.some(t => t.uid === currentUser.uid) ? currentUser.uid : (availableCachedTherapists[0]?.uid || ''))
     : (availableCachedTherapists[0]?.uid || '');
 
@@ -101,7 +101,7 @@ export const UserCalendarView: React.FC<UserCalendarViewProps> = ({ onNavigateTo
     );
     setTherapists(availableTherapists);
 
-    if (currentUser?.role === 'admin' || currentUser?.role === 'hovedadmin') {
+    if (currentUser?.role === 'admin' || (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin')) {
       if (availableTherapists.some(t => t.uid === currentUser.uid)) {
         setSelectedTherapistId(currentUser.uid);
       } else {

@@ -39,8 +39,8 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
   onAppointmentUpdated
 }) => {
   const { currentUser } = useAuth();
-  const canViewName = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientName !== false;
-  const canViewPhone = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientPhone !== false;
+  const canViewName = (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') || currentUser?.permissions?.canViewClientName !== false;
+  const canViewPhone = (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') || currentUser?.permissions?.canViewClientPhone !== false;
   const [activeTab, setActiveTab] = useState<'delay' | 'reschedule' | 'templates'>(initialTab);
 
   // Klient- og avtaledata

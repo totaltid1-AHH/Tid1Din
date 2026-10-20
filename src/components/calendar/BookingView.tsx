@@ -73,7 +73,7 @@ export const BookingView: React.FC<BookingViewProps> = ({
   initialDate 
 }) => {
   const { currentUser } = useAuth();
-  const canViewPhone = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientPhone !== false;
+  const canViewPhone = (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') || currentUser?.permissions?.canViewClientPhone !== false;
 
   // Synkron forhåndslesing fra minne-cache for 0ms umiddelbar rendering
   const getInitialTherapistId = (): string => {
@@ -83,7 +83,7 @@ export const BookingView: React.FC<BookingViewProps> = ({
       (currentUser?.role !== 'client' || u.isActive !== false || !!u.leaveEndDate)
     );
 
-    if (currentUser?.role === 'admin' || currentUser?.role === 'hovedadmin') {
+    if (currentUser?.role === 'admin' || (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin')) {
       if (available.some(t => t.uid === currentUser.uid)) {
         return currentUser.uid;
       }

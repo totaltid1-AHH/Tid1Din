@@ -11,10 +11,12 @@ import {
   Calendar as CalendarIcon, 
   LayoutDashboard,
   CheckCircle2, 
-  Sparkles,
-  Menu,
-  X,
-  BookOpen
+  Sparkles, 
+  Menu, 
+  X, 
+  BookOpen, 
+  Building2, 
+  ChevronDown 
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -23,12 +25,28 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) => {
-  const { currentUser, logout, switchUserRole, open2FASetupModal } = useAuth();
+  const { 
+    currentUser, 
+    activeCompany, 
+    companies, 
+    switchCompany, 
+    logout, 
+    switchUserRole, 
+    open2FASetupModal 
+  } = useAuth();
   const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const getRoleBadge = () => {
     if (!currentUser) return null;
+    if (currentUser.role === 'superadmin') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold bg-purple-950/80 text-purple-300 border border-purple-700/60">
+          <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+          Super-admin
+        </span>
+      );
+    }
     if (currentUser.role === 'hovedadmin') {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold bg-indigo-950/80 text-indigo-300 border border-indigo-700/60">
@@ -66,11 +84,77 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
     setCurrentTab('dashboard');
   };
 
+  const renderCompanySection = () => {
+    if (!currentUser) return null;
+
+    if (currentUser.role === 'superadmin') {
+      return (
+        <div className="px-3 pt-3 pb-2">
+          <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
+            <div className="flex items-center justify-between text-[10px] text-indigo-400 uppercase font-bold tracking-wider">
+              <span className="flex items-center gap-1">
+                <Building2 className="w-3 h-3" />
+                Aktiv bedrift
+              </span>
+              <span className="text-[9px] bg-indigo-950 text-indigo-300 px-1.5 py-0.2 rounded border border-indigo-800/60">
+                Super
+              </span>
+            </div>
+            <div className="relative">
+              <select
+                value={activeCompany?.id || ''}
+                onChange={(e) => switchCompany(e.target.value)}
+                className="w-full bg-slate-950 text-white text-xs font-bold rounded-lg pl-2 pr-7 py-2 border border-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 appearance-none cursor-pointer truncate"
+              >
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} {c.treatmentPlace ? `(${c.treatmentPlace})` : ''}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-2.5 pointer-events-none" />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // For hovedadmin eller admin: vis tilknyttet klinikknavn
+    return (
+      <div className="px-4 py-2 text-xs text-slate-400 border-b border-slate-800/80 flex items-center gap-2">
+        <Building2 className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" />
+        <span className="font-semibold text-white truncate">
+          {activeCompany?.name || 'Tid1Din'}
+        </span>
+      </div>
+    );
+  };
+
   const renderNavLinks = () => {
     if (!currentUser) return null;
 
+    const isSuperAdmin = currentUser.role === 'superadmin';
+    const isMainAdmin = currentUser.role === 'hovedadmin';
+    const isAdmin = currentUser.role === 'admin';
+    const isStaffOrAdmin = isSuperAdmin || isMainAdmin || isAdmin;
+
     return (
       <nav className="space-y-1.5 px-3">
+        {/* Bedrifter / Flerbedriftsadministrasjon (Kun for super-admin) */}
+        {isSuperAdmin && (
+          <button
+            onClick={() => handleNavClick('companies')}
+            className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-bold transition-all ${
+              currentTab === 'companies'
+                ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
+                : 'text-indigo-300 hover:text-white hover:bg-slate-900 border border-indigo-900/40'
+            }`}
+          >
+            <Building2 className="w-4.5 h-4.5 flex-shrink-0 text-indigo-400" />
+            <span>Bedrifter</span>
+          </button>
+        )}
+
         <button
           onClick={() => handleNavClick('dashboard')}
           className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
@@ -83,7 +167,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
           <span>Oversikt</span>
         </button>
 
-        {(currentUser.role === 'hovedadmin' || currentUser.role === 'admin') && (
+        {isStaffOrAdmin && (
           <button
             onClick={() => handleNavClick('journal')}
             className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
@@ -109,8 +193,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
           <span>Kalender</span>
         </button>
 
-
-        {(currentUser.role === 'hovedadmin' || currentUser.role === 'admin') && (
+        {isStaffOrAdmin && (
           <button
             onClick={() => handleNavClick('clients')}
             className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
@@ -124,7 +207,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
           </button>
         )}
 
-        {(currentUser.role === 'hovedadmin' || currentUser.role === 'admin') && (
+        {isStaffOrAdmin && (
           <button
             onClick={() => handleNavClick('admin_settings')}
             className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
@@ -138,7 +221,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
           </button>
         )}
 
-        {currentUser.role === 'hovedadmin' && (
+        {/* Global system og API innstillinger (Kun for superadmin) */}
+        {isSuperAdmin && (
           <button
             onClick={() => handleNavClick('super_admin')}
             className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-bold transition-all ${
@@ -148,7 +232,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
             }`}
           >
             <ShieldAlert className="w-4.5 h-4.5 flex-shrink-0" />
-            <span>Super-admin</span>
+            <span>System & API</span>
           </button>
         )}
       </nav>
@@ -202,12 +286,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
               </div>
               <div className="p-1.5 space-y-1">
                 <button
+                  onClick={() => handleRoleSwitch('u_superadmin_total')}
+                  className="w-full text-left px-3 py-2 text-xs rounded-xl hover:bg-slate-800 flex items-center justify-between transition-colors text-slate-200"
+                >
+                  <div>
+                    <p className="font-bold text-white text-sm">Total – Super-admin</p>
+                    <p className="text-[11px] text-purple-400 font-semibold">Flerbedriftsadmin</p>
+                  </div>
+                  {currentUser.role === 'superadmin' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                </button>
+
+                <button
                   onClick={() => handleRoleSwitch('u_hovedadmin')}
                   className="w-full text-left px-3 py-2 text-xs rounded-xl hover:bg-slate-800 flex items-center justify-between transition-colors text-slate-200"
                 >
                   <div>
                     <p className="font-bold text-white text-sm">Dr. Kari Nordmann</p>
-                    <p className="text-[11px] text-indigo-400 font-semibold">Hovedadmin</p>
+                    <p className="text-[11px] text-indigo-400 font-semibold">Hovedadmin (Hovden)</p>
                   </div>
                   {currentUser.uid === 'u_hovedadmin' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
                 </button>
@@ -256,9 +351,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
       <div className="lg:hidden sticky top-0 z-40 bg-slate-950 border-b border-slate-800 px-3.5 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between text-white flex-shrink-0">
         <div 
           className="flex items-center gap-2 cursor-pointer"
-          onClick={() => handleNavClick('dashboard')}
+          onClick={() => handleNavClick(currentUser?.role === 'superadmin' ? 'companies' : 'dashboard')}
         >
           <span className="text-xl font-black tracking-tight text-white">Tid1Din</span>
+          {activeCompany && (
+            <span className="text-xs text-slate-400 font-normal truncate max-w-[120px]">
+              &bull; {activeCompany.treatmentPlace || activeCompany.name}
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -283,7 +383,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
           <div className="relative w-72 max-w-[85vw] bg-slate-950 border-r border-slate-800 h-full flex flex-col justify-between z-10 animate-in slide-in-from-left duration-200">
             <div>
               <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-                <span className="text-2xl font-black tracking-tight text-white block">Tid1Din</span>
+                <div>
+                  <span className="text-2xl font-black tracking-tight text-white block">Tid1Din</span>
+                  <span className="text-[10px] text-slate-400">Flerbedriftsapplikasjon</span>
+                </div>
                 <button
                   onClick={() => setMobileMenuOpen(false)}
                   className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
@@ -292,7 +395,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
                 </button>
               </div>
 
-              <div className="py-4">
+              {renderCompanySection()}
+
+              <div className="py-2">
                 {renderNavLinks()}
               </div>
             </div>
@@ -308,13 +413,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
           {/* Brand header */}
           <div 
             className="p-5 border-b border-slate-800/80 cursor-pointer"
-            onClick={() => handleNavClick('dashboard')}
+            onClick={() => handleNavClick(currentUser?.role === 'superadmin' ? 'companies' : 'dashboard')}
           >
-            <span className="text-2xl font-black tracking-tight text-white">Tid1Din</span>
+            <span className="text-2xl font-black tracking-tight text-white block">Tid1Din</span>
+            <span className="text-[11px] text-slate-400">Sikker kundeoppfølging & booking</span>
           </div>
 
+          {/* Aktiv bedriftsvelger / visning */}
+          {renderCompanySection()}
+
           {/* Menyliste */}
-          <div className="py-5">
+          <div className="py-3">
             <div className="px-5 mb-2">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Hovedmeny</p>
             </div>

@@ -205,9 +205,9 @@ export const JournalView: React.FC<JournalViewProps> = ({
   const [selectedRevisionHistory, setSelectedRevisionHistory] = useState<JournalRevision[] | null>(null);
   const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
 
-  const canEdit = currentUser?.role === 'hovedadmin' || 
+  const canEdit = (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') || 
     (currentUser?.role === 'admin' && currentUser.permissions?.canEditJournals !== false);
-  const canViewName = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientName !== false;
+  const canViewName = (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') || currentUser?.permissions?.canViewClientName !== false;
 
   // 1. Last inn klienter
   useEffect(() => {

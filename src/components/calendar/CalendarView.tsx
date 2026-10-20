@@ -67,8 +67,8 @@ import { TimeRangeSelector } from './TimeRangeSelector';
 
 export const CalendarView: React.FC = () => {
   const { currentUser } = useAuth();
-  const canViewName = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientName !== false;
-  const canViewPhone = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientPhone !== false;
+  const canViewName = (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') || currentUser?.permissions?.canViewClientName !== false;
+  const canViewPhone = (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin') || currentUser?.permissions?.canViewClientPhone !== false;
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
@@ -79,7 +79,7 @@ export const CalendarView: React.FC = () => {
     (currentUser?.role !== 'client' || u.isActive !== false || !!u.leaveEndDate)
   );
 
-  const initialTherapistId = (currentUser?.role === 'admin' || currentUser?.role === 'hovedadmin')
+  const initialTherapistId = (currentUser?.role === 'admin' || (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin'))
     ? (availableCachedTherapists.some(t => t.uid === currentUser.uid) ? currentUser.uid : (availableCachedTherapists[0]?.uid || ''))
     : (availableCachedTherapists[0]?.uid || '');
 
@@ -158,7 +158,7 @@ export const CalendarView: React.FC = () => {
     setTherapists(availableTherapists);
 
     let preselectedId = '';
-    if (currentUser?.role === 'admin' || currentUser?.role === 'hovedadmin') {
+    if (currentUser?.role === 'admin' || (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin')) {
       if (availableTherapists.some(t => t.uid === currentUser.uid)) {
         preselectedId = currentUser.uid;
       }
@@ -374,7 +374,7 @@ export const CalendarView: React.FC = () => {
   const handleDayClick = (day: Date) => {
     setSelectedDate(day);
     let targetTherapistId = selectedTherapistId;
-    if (currentUser?.role === 'admin' || currentUser?.role === 'hovedadmin') {
+    if (currentUser?.role === 'admin' || (currentUser?.role === 'superadmin' || currentUser?.role === 'hovedadmin')) {
       if (therapists.some(t => t.uid === currentUser.uid)) {
         if (selectedTherapistId !== currentUser.uid) {
           handleTherapistChange(currentUser.uid);

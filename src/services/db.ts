@@ -5,10 +5,11 @@ import {
   JournalEntry, 
   SmsSettings, 
   SmsLog, 
-  SmsTemplate,
+  SmsTemplate, 
   SystemAuditLog, 
-  Holiday,
-  UserRole
+  Holiday, 
+  UserRole,
+  Company 
 } from '../types';
 import { encryptData, decryptData } from '../utils/crypto';
 import { db, isFirebaseConfigured } from '../config/firebase';
@@ -33,9 +34,25 @@ function cleanForFirestore<T>(data: T): T {
   return JSON.parse(JSON.stringify(data));
 }
 
+// Standard bedrift (pre-seed)
+export const DEFAULT_COMPANY: Company = {
+  id: 'comp_hovden',
+  name: 'Hovden Terapi',
+  treatmentPlace: 'Hovden',
+  address: 'Hovdenvegen 1, 4755 Hovden',
+  phone: '90011000',
+  email: 'post@hovdenterapi.no',
+  hovedadminUid: 'u_hovedadmin',
+  hovedadminName: 'Dr. Kari Nordmann',
+  hovedadminEmail: 'hovedadmin@dintid.no',
+  isActive: true,
+  createdAt: '2026-01-01T00:00:00.000Z'
+};
+
 // Initial pre-seed data
 const DEFAULT_WORKING_HOURS: WorkingHoursConfig = {
   id: 'default',
+  companyId: 'comp_hovden',
   workDays: [1, 2, 3, 4, 5], // Mandag til fredag
   startTime: '08:00',
   endTime: '16:00',
@@ -52,7 +69,8 @@ const DEFAULT_WORKING_HOURS: WorkingHoursConfig = {
 };
 
 const DEFAULT_SMS_SETTINGS: SmsSettings = {
-  id: 'default',
+  id: 'comp_hovden',
+  companyId: 'comp_hovden',
   apiKey: import.meta.env.VITE_GATEWAY_API_KEY || '',
   sender: import.meta.env.VITE_GATEWAY_SENDER || 'Hovden',
   treatmentPlace: 'Hovden',
@@ -67,6 +85,7 @@ const DEFAULT_SMS_SETTINGS: SmsSettings = {
 export const DEFAULT_SMS_TEMPLATES: SmsTemplate[] = [
   {
     id: 'tpl_delay_15',
+    companyId: 'comp_hovden',
     title: '15 min forsinket',
     category: 'delay',
     isDefault: true,
@@ -74,6 +93,7 @@ export const DEFAULT_SMS_TEMPLATES: SmsTemplate[] = [
   },
   {
     id: 'tpl_delay_30',
+    companyId: 'comp_hovden',
     title: '30 min forsinket',
     category: 'delay',
     isDefault: true,
@@ -81,6 +101,7 @@ export const DEFAULT_SMS_TEMPLATES: SmsTemplate[] = [
   },
   {
     id: 'tpl_reschedule',
+    companyId: 'comp_hovden',
     title: 'Flytting / Ombooking av time',
     category: 'reschedule',
     isDefault: true,
@@ -88,6 +109,7 @@ export const DEFAULT_SMS_TEMPLATES: SmsTemplate[] = [
   },
   {
     id: 'tpl_welcome',
+    companyId: 'comp_hovden',
     title: 'Oppmøte / Velkommen',
     category: 'info',
     isDefault: true,
@@ -95,6 +117,7 @@ export const DEFAULT_SMS_TEMPLATES: SmsTemplate[] = [
   },
   {
     id: 'tpl_online',
+    companyId: 'comp_hovden',
     title: 'Videomøte / Online time',
     category: 'info',
     isDefault: true,
@@ -105,7 +128,19 @@ export const DEFAULT_SMS_TEMPLATES: SmsTemplate[] = [
 // Startverdier for brukere
 const SEED_USERS: UserProfile[] = [
   {
+    uid: 'u_superadmin_total',
+    email: 'total.tid1@gmail.com',
+    username: 'superadmin',
+    password: 'demo1234',
+    role: 'superadmin',
+    displayName: 'Super Administrator',
+    twoFactorEnabled: false,
+    isActive: true,
+    createdAt: new Date().toISOString()
+  },
+  {
     uid: 'u_hovedadmin',
+    companyId: 'comp_hovden',
     email: 'hovedadmin@dintid.no',
     username: 'hovedadmin',
     password: 'demo1234',
@@ -119,6 +154,7 @@ const SEED_USERS: UserProfile[] = [
   },
   {
     uid: 'u_admin_full',
+    companyId: 'comp_hovden',
     email: 'admin.jonas@dintid.no',
     username: 'jonas',
     password: 'demo1234',
@@ -138,6 +174,7 @@ const SEED_USERS: UserProfile[] = [
   },
   {
     uid: 'u_admin_restricted',
+    companyId: 'comp_hovden',
     email: 'admin.eva@dintid.no',
     username: 'eva',
     password: 'demo1234',
@@ -157,6 +194,7 @@ const SEED_USERS: UserProfile[] = [
   },
   {
     uid: 'u_client_1000',
+    companyId: 'comp_hovden',
     email: 'ola.hansen@eksempel.no',
     username: 'ola',
     password: 'demo1234',
@@ -172,6 +210,7 @@ const SEED_USERS: UserProfile[] = [
   },
   {
     uid: 'u_client_1001',
+    companyId: 'comp_hovden',
     email: 'silje.tangen@eksempel.no',
     username: 'silje',
     password: 'demo1234',
@@ -189,6 +228,10 @@ const SEED_USERS: UserProfile[] = [
 
 
 class DatabaseService {
+  private memoryCompanies: Company[] | null = null;
+  private memoryCompaniesTime = 0;
+  private activeCompanyId: string = 'comp_hovden';
+
   private memoryAppointments: Appointment[] | null = null;
   private memoryAppointmentsTime = 0;
   private memoryUsers: UserProfile[] | null = null;
@@ -197,9 +240,118 @@ class DatabaseService {
   private memoryHolidays: Holiday[] | null = null;
   private memoryHolidaysTime = 0;
 
-  private notifyDataUpdated(type: 'appointments' | 'users' | 'working_hours' | 'holidays') {
+  private notifyDataUpdated(type: 'appointments' | 'users' | 'working_hours' | 'holidays' | 'companies') {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('dintid_data_updated', { detail: { type } }));
+    }
+  }
+
+  // --- AKTIV BEDRIFT (MULTI-TENANT CONTEXT) ---
+  public getActiveCompanyId(): string {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('dintid_active_company_id');
+        if (saved) return saved;
+      } catch {}
+    }
+    return this.activeCompanyId || 'comp_hovden';
+  }
+
+  public setActiveCompanyId(companyId: string): void {
+    this.activeCompanyId = companyId;
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('dintid_active_company_id', companyId);
+      } catch {}
+    }
+    this.notifyDataUpdated('companies');
+  }
+
+  // --- BEDRIFTER (COMPANIES) ---
+  public getCachedCompanies(): Company[] {
+    if (this.memoryCompanies) {
+      return this.memoryCompanies;
+    }
+    const local = this.getLocal<Company[]>('companies', [DEFAULT_COMPANY]);
+    this.memoryCompanies = local;
+    return local;
+  }
+
+  public async getCompanies(forceRefresh = false): Promise<Company[]> {
+    const now = Date.now();
+    if (!forceRefresh && this.memoryCompanies && (now - this.memoryCompaniesTime < 10000)) {
+      return this.memoryCompanies;
+    }
+
+    const cached = this.getCachedCompanies();
+
+    if (isFirebaseConfigured && db) {
+      try {
+        const snap = await getDocs(collection(db, 'companies'));
+        if (!snap.empty) {
+          const list = snap.docs.map(d => ({ ...d.data(), id: d.id } as Company));
+          this.memoryCompanies = list;
+          this.memoryCompaniesTime = Date.now();
+          this.setLocal('companies', list);
+          return list;
+        } else {
+          await setDoc(doc(db, 'companies', DEFAULT_COMPANY.id), cleanForFirestore(DEFAULT_COMPANY));
+          this.memoryCompanies = [DEFAULT_COMPANY];
+          this.memoryCompaniesTime = Date.now();
+          this.setLocal('companies', [DEFAULT_COMPANY]);
+          return [DEFAULT_COMPANY];
+        }
+      } catch (e) {
+        console.warn('Firebase feilet ved henting av bedrifter, bruker lokal cache:', e);
+      }
+    }
+
+    this.memoryCompanies = cached;
+    this.memoryCompaniesTime = Date.now();
+    return cached;
+  }
+
+  public async getCompanyById(id: string): Promise<Company | null> {
+    const companies = await this.getCompanies();
+    return companies.find(c => c.id === id) || null;
+  }
+
+  public async saveCompany(company: Company): Promise<void> {
+    const cleanCompany = cleanForFirestore(company);
+    const companies = [...this.getCachedCompanies()];
+    const index = companies.findIndex(c => c.id === company.id);
+    if (index >= 0) {
+      companies[index] = { ...company, updatedAt: new Date().toISOString() };
+    } else {
+      companies.push(company);
+    }
+    this.memoryCompanies = companies;
+    this.memoryCompaniesTime = Date.now();
+    this.setLocal('companies', companies);
+    this.notifyDataUpdated('companies');
+
+    if (isFirebaseConfigured && db) {
+      try {
+        await setDoc(doc(db, 'companies', company.id), cleanCompany);
+      } catch (e) {
+        console.error('Kunne ikke lagre bedrift til Firestore:', e);
+      }
+    }
+  }
+
+  public async deleteCompany(id: string): Promise<void> {
+    const companies = this.getCachedCompanies().filter(c => c.id !== id);
+    this.memoryCompanies = companies;
+    this.memoryCompaniesTime = Date.now();
+    this.setLocal('companies', companies);
+    this.notifyDataUpdated('companies');
+
+    if (isFirebaseConfigured && db) {
+      try {
+        await deleteDoc(doc(db, 'companies', id));
+      } catch (e) {
+        console.error('Kunne ikke slette bedrift fra Firestore:', e);
+      }
     }
   }
 
@@ -209,7 +361,7 @@ class DatabaseService {
         ...u,
         isActive: u.isActive !== false
       };
-      if (u.role === 'admin' || u.role === 'hovedadmin') {
+      if (u.role === 'admin' || u.role === 'hovedadmin' || u.role === 'superadmin') {
         return {
           ...base,
           displayName: u.displayName.replace(/\s*\([^)]*\)/g, '').trim()
@@ -219,7 +371,7 @@ class DatabaseService {
     });
   }
 
-  public getCachedUsers(): UserProfile[] {
+  public getCachedAllUsers(): UserProfile[] {
     if (this.memoryUsers) {
       return this.memoryUsers;
     }
@@ -229,18 +381,29 @@ class DatabaseService {
     return cleaned;
   }
 
-  public getCachedAppointments(): Appointment[] {
-    if (this.memoryAppointments) {
-      return this.memoryAppointments;
+  public getCachedUsers(filterCompanyId?: string): UserProfile[] {
+    const all = this.getCachedAllUsers();
+    if (filterCompanyId === 'all') {
+      return all;
     }
-    const local = this.getLocal<Appointment[]>('appointments', []);
-    this.memoryAppointments = local;
-    return local;
+    const target = filterCompanyId || this.getActiveCompanyId();
+    return all.filter(u => u.companyId === target || (!u.companyId && target === 'comp_hovden'));
   }
 
-  public getCachedWorkingHours(therapistId?: string): WorkingHoursConfig {
-    const docId = therapistId ? `wh_${therapistId}` : 'default';
-    const storageKey = therapistId ? `working_hours_${therapistId}` : 'working_hours';
+  public getCachedAppointments(filterCompanyId?: string): Appointment[] {
+    const local = this.getLocal<Appointment[]>('appointments', []);
+    this.memoryAppointments = local;
+    if (filterCompanyId === 'all') {
+      return local;
+    }
+    const target = filterCompanyId || this.getActiveCompanyId();
+    return local.filter(a => a.companyId === target || (!a.companyId && target === 'comp_hovden'));
+  }
+
+  public getCachedWorkingHours(therapistId?: string, companyId?: string): WorkingHoursConfig {
+    const targetCompany = companyId || this.getActiveCompanyId();
+    const docId = therapistId ? `wh_${therapistId}` : `wh_${targetCompany}`;
+    const storageKey = therapistId ? `working_hours_${therapistId}` : `working_hours_${targetCompany}`;
 
     const mem = this.memoryWorkingHours.get(docId);
     if (mem) {
@@ -252,7 +415,7 @@ class DatabaseService {
       const merged: WorkingHoursConfig = {
         ...DEFAULT_WORKING_HOURS,
         ...local,
-        // Behold terapeuten sine faktiske arbeidsdager selv om listen er tom (f.eks. ved ferie/stengt)
+        companyId: targetCompany,
         workDays: Array.isArray(local.workDays) ? local.workDays : DEFAULT_WORKING_HOURS.workDays,
         breaks: Array.isArray(local.breaks) ? local.breaks : DEFAULT_WORKING_HOURS.breaks,
         prices: { ...DEFAULT_WORKING_HOURS.prices, ...(local.prices || {}) },
@@ -269,6 +432,7 @@ class DatabaseService {
     const fallback: WorkingHoursConfig = {
       ...DEFAULT_WORKING_HOURS,
       ...baseDefault,
+      companyId: targetCompany,
       workDays: Array.isArray(baseDefault.workDays) ? baseDefault.workDays : DEFAULT_WORKING_HOURS.workDays,
       breaks: Array.isArray(baseDefault.breaks) ? baseDefault.breaks : DEFAULT_WORKING_HOURS.breaks,
       prices: { ...DEFAULT_WORKING_HOURS.prices, ...(baseDefault.prices || {}) },
@@ -281,13 +445,14 @@ class DatabaseService {
     return fallback;
   }
 
-  public getCachedHolidays(): Holiday[] {
-    if (this.memoryHolidays) {
-      return this.memoryHolidays;
-    }
+  public getCachedHolidays(filterCompanyId?: string): Holiday[] {
     const local = this.getLocal<Holiday[]>('holidays', []);
     this.memoryHolidays = local;
-    return local;
+    if (filterCompanyId === 'all') {
+      return local;
+    }
+    const target = filterCompanyId || this.getActiveCompanyId();
+    return local.filter(h => h.companyId === target || (!h.companyId && target === 'comp_hovden'));
   }
 
   private getLocal<T>(key: string, defaultValue: T): T {
@@ -314,6 +479,7 @@ class DatabaseService {
   // Initialiser testdata i LocalStorage dersom tomt
   public async initSeedData() {
     if (!localStorage.getItem(STORAGE_PREFIX + 'initialized')) {
+      this.setLocal('companies', [DEFAULT_COMPANY]);
       this.setLocal('users', SEED_USERS);
       this.setLocal('working_hours', DEFAULT_WORKING_HOURS);
       this.setLocal('sms_settings', DEFAULT_SMS_SETTINGS);
@@ -322,12 +488,13 @@ class DatabaseService {
       this.setLocal('system_logs', [
         {
           id: 'log_' + Date.now(),
+          companyId: 'comp_hovden',
           timestamp: new Date().toISOString(),
-          userId: 'u_hovedadmin',
-          userEmail: 'hovedadmin@dintid.no',
-          userRole: 'hovedadmin',
+          userId: 'u_superadmin_total',
+          userEmail: 'total.tid1@gmail.com',
+          userRole: 'superadmin',
           action: 'login',
-          details: 'Systemet initialisert med standardinnstillinger'
+          details: 'Systemet initialisert med standard flerbedriftskonfigurasjon'
         }
       ]);
 
@@ -340,6 +507,7 @@ class DatabaseService {
       const seedAppointments: Appointment[] = [
         {
           id: 'apt_1',
+          companyId: 'comp_hovden',
           clientId: 'u_client_1000',
           clientNumber: 1000,
           clientName: 'Ola Hansen',
@@ -367,6 +535,7 @@ class DatabaseService {
       const seedJournals: JournalEntry[] = [
         {
           id: 'jrn_1',
+          companyId: 'comp_hovden',
           clientId: 'u_client_1000',
           authorId: 'u_hovedadmin',
           authorName: 'Dr. Kari Nordmann',
@@ -385,14 +554,14 @@ class DatabaseService {
     }
   }
 
-  // --- BRUKERE & KLIENTER ---
-  public async getUsers(forceRefresh = false): Promise<UserProfile[]> {
+  // --- BRUKERE PÅ TVERS AV BEDRIFTER ---
+  public async getAllUsers(forceRefresh = false): Promise<UserProfile[]> {
     const now = Date.now();
     if (!forceRefresh && this.memoryUsers && (now - this.memoryUsersTime < 10000)) {
       return this.memoryUsers;
     }
 
-    const cached = this.getCachedUsers();
+    const cached = this.getCachedAllUsers();
 
     const fetchPromise = (async () => {
       if (isFirebaseConfigured && db) {
@@ -411,7 +580,7 @@ class DatabaseService {
             return cleaned;
           } else {
             for (const u of SEED_USERS) {
-              await setDoc(doc(db, 'users', u.uid), u);
+              await setDoc(doc(db, 'users', u.uid), cleanForFirestore(u));
             }
             this.memoryUsers = SEED_USERS;
             this.memoryUsersTime = Date.now();
@@ -435,14 +604,36 @@ class DatabaseService {
     return await fetchPromise;
   }
 
+  // Hent brukere for en bestemt bedrift (eller aktiv bedrift som default, eller alle hvis 'all')
+  public async getUsers(
+    filterCompanyIdOrForceRefresh?: string | boolean, 
+    forceRefresh = false
+  ): Promise<UserProfile[]> {
+    const isBool = typeof filterCompanyIdOrForceRefresh === 'boolean';
+    const actualForceRefresh = isBool ? filterCompanyIdOrForceRefresh : forceRefresh;
+    const filterCompanyId = isBool ? undefined : filterCompanyIdOrForceRefresh;
+
+    const all = await this.getAllUsers(actualForceRefresh);
+    if (filterCompanyId === 'all') {
+      return all;
+    }
+    const target = filterCompanyId || this.getActiveCompanyId();
+    return all.filter(u => u.companyId === target || (!u.companyId && target === 'comp_hovden'));
+  }
+
   public async getUserById(uid: string): Promise<UserProfile | null> {
-    const users = await this.getUsers();
+    const users = await this.getAllUsers();
     return users.find(u => u.uid === uid) || null;
   }
 
   public async saveUser(user: UserProfile): Promise<void> {
+    // Sørg for at ikke-superadmin brukere alltid har en companyId
+    if (!user.companyId && user.role !== 'superadmin') {
+      user.companyId = this.getActiveCompanyId();
+    }
+
     const cleanUser = cleanForFirestore(user);
-    const users = [...this.getCachedUsers()];
+    const users = [...this.getCachedAllUsers()];
     const index = users.findIndex(u => u.uid === user.uid);
     if (index >= 0) {
       users[index] = user;
@@ -464,7 +655,7 @@ class DatabaseService {
   }
 
   public async deleteUser(uid: string): Promise<void> {
-    const users = this.getCachedUsers().filter(u => u.uid !== uid);
+    const users = this.getCachedAllUsers().filter(u => u.uid !== uid);
     this.memoryUsers = users;
     this.memoryUsersTime = Date.now();
     this.setLocal('users', users);
@@ -480,8 +671,8 @@ class DatabaseService {
   }
 
   // Generer neste kundenummer (starter på 1000)
-  public async getNextCustomerNumber(): Promise<number> {
-    const users = await this.getUsers();
+  public async getNextCustomerNumber(companyId?: string): Promise<number> {
+    const users = await this.getUsers(companyId);
     const clientNumbers = users
       .filter(u => u.role === 'client' && typeof u.customerNumber === 'number')
       .map(u => u.customerNumber as number);
@@ -492,9 +683,10 @@ class DatabaseService {
   }
 
   // --- ARBEIDSTID & INNSTILLINGER ---
-  public async getWorkingHours(therapistId?: string, forceRefresh = false): Promise<WorkingHoursConfig> {
-    const docId = therapistId ? `wh_${therapistId}` : 'default';
-    const storageKey = therapistId ? `working_hours_${therapistId}` : 'working_hours';
+  public async getWorkingHours(therapistId?: string, companyId?: string, forceRefresh = false): Promise<WorkingHoursConfig> {
+    const targetCompany = companyId || this.getActiveCompanyId();
+    const docId = therapistId ? `wh_${therapistId}` : `wh_${targetCompany}`;
+    const storageKey = therapistId ? `working_hours_${therapistId}` : `working_hours_${targetCompany}`;
     const now = Date.now();
 
     const mem = this.memoryWorkingHours.get(docId);
@@ -502,7 +694,7 @@ class DatabaseService {
       return mem.config;
     }
 
-    const cached = this.getCachedWorkingHours(therapistId);
+    const cached = this.getCachedWorkingHours(therapistId, targetCompany);
 
     const fetchPromise = (async () => {
       if (isFirebaseConfigured && db) {
@@ -514,6 +706,7 @@ class DatabaseService {
             const merged: WorkingHoursConfig = {
               ...DEFAULT_WORKING_HOURS,
               ...config,
+              companyId: targetCompany,
               workDays: Array.isArray(config.workDays) ? config.workDays : DEFAULT_WORKING_HOURS.workDays,
               breaks: Array.isArray(config.breaks) ? config.breaks : DEFAULT_WORKING_HOURS.breaks,
               prices: { ...DEFAULT_WORKING_HOURS.prices, ...(config.prices || {}) },
@@ -531,13 +724,11 @@ class DatabaseService {
             }
             return merged;
           } else {
-            // Hvis dokumentet ikke finnes i Firestore ennå:
-            // Sjekk om vi allerede har et lokalt lagret oppsett for denne terapeuten
             const localSaved = this.getLocal<WorkingHoursConfig | null>(storageKey, null);
             if (localSaved) {
-              // Last opp terapeuten sitt eksisterende lokale oppsett til Firestore i stedet for å overskrive med defaults
               const cleanConfig = cleanForFirestore({
                 ...localSaved,
+                companyId: targetCompany,
                 id: docId,
                 therapistId: therapistId || localSaved.therapistId
               });
@@ -548,14 +739,14 @@ class DatabaseService {
               return cleanConfig;
             }
 
-            // Hvis det heller ikke finnes noe lokalt for terapeuten, sjekk om det finnes klinikk-default i Firestore
             if (therapistId) {
-              const defaultSnap = await getDoc(doc(db, 'workingHours', 'default')).catch(() => null);
+              const defaultSnap = await getDoc(doc(db, 'workingHours', `wh_${targetCompany}`)).catch(() => null);
               if (defaultSnap && defaultSnap.exists()) {
                 const defData = defaultSnap.data() as WorkingHoursConfig;
                 const cloned: WorkingHoursConfig = {
                   ...DEFAULT_WORKING_HOURS,
                   ...defData,
+                  companyId: targetCompany,
                   id: docId,
                   therapistId
                 };
@@ -565,10 +756,9 @@ class DatabaseService {
                 return cloned;
               }
             } else {
-              // For selve 'default' klinikkoppsettet
-              await setDoc(doc(db, 'workingHours', 'default'), cleanForFirestore(cached)).catch(() => null);
+              await setDoc(doc(db, 'workingHours', docId), cleanForFirestore(cached)).catch(() => null);
               this.memoryWorkingHours.set(docId, { config: cached, timestamp: Date.now() });
-              this.setLocal('working_hours', cached);
+              this.setLocal(storageKey, cached);
               return cached;
             }
           }
@@ -588,23 +778,23 @@ class DatabaseService {
     return await fetchPromise;
   }
 
-  public async saveWorkingHours(config: WorkingHoursConfig, therapistId?: string): Promise<void> {
+  public async saveWorkingHours(config: WorkingHoursConfig, therapistId?: string, companyId?: string): Promise<void> {
+    const targetCompany = companyId || config.companyId || this.getActiveCompanyId();
     const targetTherapistId = therapistId || config.therapistId;
-    const docId = targetTherapistId ? `wh_${targetTherapistId}` : 'default';
-    const storageKey = targetTherapistId ? `working_hours_${targetTherapistId}` : 'working_hours';
+    const docId = targetTherapistId ? `wh_${targetTherapistId}` : `wh_${targetCompany}`;
+    const storageKey = targetTherapistId ? `working_hours_${targetTherapistId}` : `working_hours_${targetCompany}`;
 
     const cleanConfig = cleanForFirestore({
       ...config,
+      companyId: targetCompany,
       id: docId,
       therapistId: targetTherapistId || undefined
     });
 
-    // 1. Alltid lagre i minne og LocalStorage umiddelbart
     this.memoryWorkingHours.set(docId, { config: cleanConfig, timestamp: Date.now() });
     this.setLocal(storageKey, cleanConfig);
     this.notifyDataUpdated('working_hours');
 
-    // 2. Synkroniser til Firestore med robust feilhåndtering
     if (isFirebaseConfigured && db) {
       try {
         await setDoc(doc(db, 'workingHours', docId), cleanConfig);
@@ -615,13 +805,22 @@ class DatabaseService {
   }
 
   // --- TIMEAVTALER (APPOINTMENTS) ---
-  public async getAppointments(forceRefresh = false): Promise<Appointment[]> {
+  public async getAppointments(
+    filterCompanyIdOrForceRefresh?: string | boolean, 
+    forceRefresh = false
+  ): Promise<Appointment[]> {
+    const isBool = typeof filterCompanyIdOrForceRefresh === 'boolean';
+    const actualForceRefresh = isBool ? filterCompanyIdOrForceRefresh : forceRefresh;
+    const filterCompanyId = isBool ? undefined : filterCompanyIdOrForceRefresh;
+
+    const target = filterCompanyId || this.getActiveCompanyId();
     const now = Date.now();
-    if (!forceRefresh && this.memoryAppointments && (now - this.memoryAppointmentsTime < 10000)) {
-      return this.memoryAppointments;
+    if (!actualForceRefresh && this.memoryAppointments && (now - this.memoryAppointmentsTime < 10000)) {
+      if (filterCompanyId === 'all') return this.memoryAppointments;
+      return this.memoryAppointments.filter(a => a.companyId === target || (!a.companyId && target === 'comp_hovden'));
     }
 
-    const cached = this.getCachedAppointments();
+    const cached = this.getCachedAppointments(filterCompanyId);
 
     const fetchPromise = (async () => {
       if (isFirebaseConfigured && db) {
@@ -636,10 +835,11 @@ class DatabaseService {
             if (hasChanged) {
               this.notifyDataUpdated('appointments');
             }
-            return apts;
+            if (filterCompanyId === 'all') return apts;
+            return apts.filter(a => a.companyId === target || (!a.companyId && target === 'comp_hovden'));
           } else if (cached.length > 0) {
             for (const apt of cached) {
-              await setDoc(doc(db, 'appointments', apt.id), apt);
+              await setDoc(doc(db, 'appointments', apt.id), cleanForFirestore(apt));
             }
           }
         } catch (e) {
@@ -651,7 +851,7 @@ class DatabaseService {
       return cached;
     })();
 
-    if (cached.length > 0 && !forceRefresh) {
+    if (cached.length > 0 && !actualForceRefresh) {
       fetchPromise.catch(console.error);
       return cached;
     }
@@ -660,13 +860,17 @@ class DatabaseService {
   }
 
   public async getAppointmentsByClient(clientId: string): Promise<Appointment[]> {
-    const all = await this.getAppointments();
+    const all = await this.getAppointments('all');
     return all.filter(a => a.clientId === clientId);
   }
 
   public async saveAppointment(apt: Appointment): Promise<void> {
+    if (!apt.companyId) {
+      apt.companyId = this.getActiveCompanyId();
+    }
+
     const cleanApt = cleanForFirestore(apt);
-    const appointments = [...this.getCachedAppointments()];
+    const appointments = [...this.getCachedAppointments('all')];
     const idx = appointments.findIndex(a => a.id === apt.id);
     if (idx >= 0) {
       appointments[idx] = { ...apt, updatedAt: new Date().toISOString() };
@@ -689,7 +893,7 @@ class DatabaseService {
   }
 
   public async cancelAppointment(id: string, reason?: string): Promise<void> {
-    const appointments = [...this.getCachedAppointments()];
+    const appointments = [...this.getCachedAppointments('all')];
     const apt = appointments.find(a => a.id === id);
     if (apt) {
       apt.status = 'cancelled';
@@ -723,7 +927,7 @@ class DatabaseService {
           const localJournals = this.getLocal<JournalEntry[]>('journals', []);
           if (localJournals.length > 0) {
             for (const j of localJournals) {
-              await setDoc(doc(db, 'journals', j.id), j);
+              await setDoc(doc(db, 'journals', j.id), cleanForFirestore(j));
             }
             return localJournals.filter(j => j.clientId === clientId);
           }
@@ -737,6 +941,10 @@ class DatabaseService {
   }
 
   public async saveJournalEntry(entry: JournalEntry): Promise<void> {
+    if (!entry.companyId) {
+      entry.companyId = this.getActiveCompanyId();
+    }
+
     const all = this.getLocal<JournalEntry[]>('journals', []);
     const idx = all.findIndex(j => j.id === entry.id);
     if (idx >= 0) {
@@ -770,25 +978,32 @@ class DatabaseService {
   }
 
   // --- SMS-INNSTILLINGER & LOGGER ---
-  public getSmsSettingsSync(): SmsSettings {
-    return this.getLocal<SmsSettings>('sms_settings', DEFAULT_SMS_SETTINGS);
+  public getSmsSettingsSync(companyId?: string): SmsSettings {
+    const target = companyId || this.getActiveCompanyId();
+    return this.getLocal<SmsSettings>(`sms_settings_${target}`, {
+      ...DEFAULT_SMS_SETTINGS,
+      id: target,
+      companyId: target
+    });
   }
 
-  public async getSmsSettings(): Promise<SmsSettings> {
+  public async getSmsSettings(companyId?: string): Promise<SmsSettings> {
+    const target = companyId || this.getActiveCompanyId();
+    const storageKey = `sms_settings_${target}`;
+
     if (isFirebaseConfigured && db) {
       try {
-        const snap = await getDoc(doc(db, 'smsSettings', 'default'));
+        const snap = await getDoc(doc(db, 'smsSettings', target));
         if (snap.exists()) {
           const settings = snap.data() as SmsSettings;
           let changed = false;
 
-          // Sørg for at behandlingssted er satt
           if (!settings.treatmentPlace) {
-            settings.treatmentPlace = settings.sender || 'Hovden';
+            const comp = await this.getCompanyById(target);
+            settings.treatmentPlace = comp?.treatmentPlace || settings.sender || 'Hovden';
             changed = true;
           }
 
-          // Fjern automatisk {avbestillingslenke} dersom den finnes, da GatewayAPI blokkerer ikke-hvitelistede lenker
           if (settings.bookingTemplate && settings.bookingTemplate.includes('{avbestillingslenke}')) {
             settings.bookingTemplate = settings.bookingTemplate
               .replace(/\s*Avbestilling:\s*\{avbestillingslenke\}/g, ' Avbestilling må skje senest 24t før. Velkommen!')
@@ -800,62 +1015,64 @@ class DatabaseService {
             changed = true;
           }
 
-          // Migrer eksplisitt Tid1Din i maler til {behandlingssted}
-          if (settings.bookingTemplate && settings.bookingTemplate.includes('Tid1Din')) {
-            settings.bookingTemplate = settings.bookingTemplate
-              .replace(/hos Tid1Din/gi, 'hos {behandlingssted}')
-              .replace(/fra Tid1Din/gi, 'fra {behandlingssted}')
-              .replace(/Tid1Din/g, '{behandlingssted}');
-            changed = true;
-          }
-          if (settings.reminderTemplate && settings.reminderTemplate.includes('Tid1Din')) {
-            settings.reminderTemplate = settings.reminderTemplate
-              .replace(/hos Tid1Din/gi, 'hos {behandlingssted}')
-              .replace(/fra Tid1Din/gi, 'fra {behandlingssted}')
-              .replace(/Tid1Din/g, '{behandlingssted}');
-            changed = true;
-          }
-
           if (changed) {
-            await this.saveSmsSettings(settings);
+            await this.saveSmsSettings(settings, target);
           }
-          this.setLocal('sms_settings', settings);
+          this.setLocal(storageKey, settings);
           return settings;
         } else {
-          await setDoc(doc(db, 'smsSettings', 'default'), DEFAULT_SMS_SETTINGS);
-          this.setLocal('sms_settings', DEFAULT_SMS_SETTINGS);
-          return DEFAULT_SMS_SETTINGS;
+          // Generer default tilpasset bedriften
+          const comp = await this.getCompanyById(target);
+          const defaultSettings: SmsSettings = {
+            ...DEFAULT_SMS_SETTINGS,
+            id: target,
+            companyId: target,
+            sender: comp?.treatmentPlace || DEFAULT_SMS_SETTINGS.sender,
+            treatmentPlace: comp?.treatmentPlace || comp?.name || 'Hovden'
+          };
+          await setDoc(doc(db, 'smsSettings', target), cleanForFirestore(defaultSettings)).catch(() => null);
+          this.setLocal(storageKey, defaultSettings);
+          return defaultSettings;
         }
       } catch (e) {
         console.warn('Firebase error fetching SMS settings:', e);
       }
     }
-    return this.getLocal<SmsSettings>('sms_settings', DEFAULT_SMS_SETTINGS);
+    return this.getLocal<SmsSettings>(storageKey, DEFAULT_SMS_SETTINGS);
   }
 
-  public async saveSmsSettings(settings: SmsSettings): Promise<void> {
-    this.setLocal('sms_settings', settings);
+  public async saveSmsSettings(settings: SmsSettings, companyId?: string): Promise<void> {
+    const target = companyId || settings.companyId || this.getActiveCompanyId();
+    const updated = { ...settings, id: target, companyId: target };
+    this.setLocal(`sms_settings_${target}`, updated);
     if (isFirebaseConfigured && db) {
       try {
-        await setDoc(doc(db, 'smsSettings', 'default'), settings);
+        await setDoc(doc(db, 'smsSettings', target), cleanForFirestore(updated));
       } catch (e) {
         console.error('Kunne ikke lagre SMS-innstillinger til Firestore:', e);
       }
     }
   }
 
-  public async getSmsLogs(): Promise<SmsLog[]> {
-    return this.getLocal<SmsLog[]>('sms_logs', []);
+  public async getSmsLogs(companyId?: string): Promise<SmsLog[]> {
+    const target = companyId || this.getActiveCompanyId();
+    const all = this.getLocal<SmsLog[]>('sms_logs', []);
+    if (companyId === 'all') return all;
+    return all.filter(l => l.companyId === target || (!l.companyId && target === 'comp_hovden'));
   }
 
   public async logSms(log: SmsLog): Promise<void> {
-    const logs = await this.getSmsLogs();
+    if (!log.companyId) {
+      log.companyId = this.getActiveCompanyId();
+    }
+    const logs = this.getLocal<SmsLog[]>('sms_logs', []);
     logs.unshift(log);
-    this.setLocal('sms_logs', logs.slice(0, 100)); // Bevar de 100 siste
+    this.setLocal('sms_logs', logs.slice(0, 200));
   }
 
   // --- SMS MALER / STANDARDTEKSTER ---
-  public async getSmsTemplates(): Promise<SmsTemplate[]> {
+  public async getSmsTemplates(companyId?: string): Promise<SmsTemplate[]> {
+    const target = companyId || this.getActiveCompanyId();
     if (isFirebaseConfigured && db) {
       try {
         const snap = await getDocs(collection(db, 'smsTemplates'));
@@ -863,17 +1080,23 @@ class DatabaseService {
           const list: SmsTemplate[] = [];
           snap.forEach(d => list.push(d.data() as SmsTemplate));
           this.setLocal('sms_templates', list);
-          return list;
+          if (companyId === 'all') return list;
+          return list.filter(t => t.companyId === target || (!t.companyId && target === 'comp_hovden'));
         }
       } catch (e) {
         console.warn('Firebase error fetching SMS templates:', e);
       }
     }
-    return this.getLocal<SmsTemplate[]>('sms_templates', DEFAULT_SMS_TEMPLATES);
+    const all = this.getLocal<SmsTemplate[]>('sms_templates', DEFAULT_SMS_TEMPLATES);
+    if (companyId === 'all') return all;
+    return all.filter(t => t.companyId === target || (!t.companyId && target === 'comp_hovden'));
   }
 
   public async saveSmsTemplate(template: SmsTemplate): Promise<void> {
-    const templates = await this.getSmsTemplates();
+    if (!template.companyId) {
+      template.companyId = this.getActiveCompanyId();
+    }
+    const templates = this.getLocal<SmsTemplate[]>('sms_templates', DEFAULT_SMS_TEMPLATES);
     const index = templates.findIndex(t => t.id === template.id);
     if (index >= 0) {
       templates[index] = template;
@@ -891,7 +1114,7 @@ class DatabaseService {
   }
 
   public async deleteSmsTemplate(id: string): Promise<void> {
-    const templates = await this.getSmsTemplates();
+    const templates = this.getLocal<SmsTemplate[]>('sms_templates', DEFAULT_SMS_TEMPLATES);
     const filtered = templates.filter(t => t.id !== id);
     this.setLocal('sms_templates', filtered);
     if (isFirebaseConfigured && db) {
@@ -904,17 +1127,23 @@ class DatabaseService {
   }
 
   // --- SYSTEMLOGG (AUDIT TRAIL) ---
-  public async getSystemLogs(): Promise<SystemAuditLog[]> {
-    return this.getLocal<SystemAuditLog[]>('system_logs', []);
+  public async getSystemLogs(companyId?: string): Promise<SystemAuditLog[]> {
+    const target = companyId || this.getActiveCompanyId();
+    const all = this.getLocal<SystemAuditLog[]>('system_logs', []);
+    if (companyId === 'all') return all;
+    return all.filter(l => l.companyId === target || (!l.companyId && target === 'comp_hovden'));
   }
 
   public async logAction(
     user: { uid: string; email: string; role: UserRole },
     action: SystemAuditLog['action'],
-    details: string
+    details: string,
+    companyId?: string
   ): Promise<void> {
+    const target = companyId || this.getActiveCompanyId();
     const logEntry: SystemAuditLog = {
       id: 'log_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+      companyId: target,
       timestamp: new Date().toISOString(),
       userId: user.uid,
       userEmail: user.email,
@@ -923,13 +1152,13 @@ class DatabaseService {
       details
     };
 
-    const logs = await this.getSystemLogs();
+    const logs = this.getLocal<SystemAuditLog[]>('system_logs', []);
     logs.unshift(logEntry);
-    this.setLocal('system_logs', logs.slice(0, 200));
+    this.setLocal('system_logs', logs.slice(0, 300));
 
     if (isFirebaseConfigured && db) {
       try {
-        await addDoc(collection(db, 'systemLogs'), logEntry);
+        await addDoc(collection(db, 'systemLogs'), cleanForFirestore(logEntry));
       } catch (e) {
         console.warn('Kunne ikke skrive systemlogg til Firestore:', e);
       }
@@ -937,13 +1166,22 @@ class DatabaseService {
   }
 
   // --- FERIER & FRAVÆR ---
-  public async getHolidays(forceRefresh = false): Promise<Holiday[]> {
+  public async getHolidays(
+    filterCompanyIdOrForceRefresh?: string | boolean, 
+    forceRefresh = false
+  ): Promise<Holiday[]> {
+    const isBool = typeof filterCompanyIdOrForceRefresh === 'boolean';
+    const actualForceRefresh = isBool ? filterCompanyIdOrForceRefresh : forceRefresh;
+    const filterCompanyId = isBool ? undefined : filterCompanyIdOrForceRefresh;
+
+    const target = filterCompanyId || this.getActiveCompanyId();
     const now = Date.now();
-    if (!forceRefresh && this.memoryHolidays && (now - this.memoryHolidaysTime < 10000)) {
-      return this.memoryHolidays;
+    if (!actualForceRefresh && this.memoryHolidays && (now - this.memoryHolidaysTime < 10000)) {
+      if (filterCompanyId === 'all') return this.memoryHolidays;
+      return this.memoryHolidays.filter(h => h.companyId === target || (!h.companyId && target === 'comp_hovden'));
     }
 
-    const cached = this.getCachedHolidays();
+    const cached = this.getCachedHolidays(filterCompanyId);
 
     const fetchPromise = (async () => {
       if (isFirebaseConfigured && db) {
@@ -958,7 +1196,8 @@ class DatabaseService {
             if (hasChanged) {
               this.notifyDataUpdated('holidays');
             }
-            return holidays;
+            if (filterCompanyId === 'all') return holidays;
+            return holidays.filter(h => h.companyId === target || (!h.companyId && target === 'comp_hovden'));
           }
         } catch (e) {
           console.warn('Firebase error fetching holidays:', e);
@@ -969,7 +1208,7 @@ class DatabaseService {
       return cached;
     })();
 
-    if (cached.length > 0 && !forceRefresh) {
+    if (cached.length > 0 && !actualForceRefresh) {
       fetchPromise.catch(console.error);
       return cached;
     }
@@ -978,8 +1217,11 @@ class DatabaseService {
   }
 
   public async saveHoliday(holiday: Holiday): Promise<void> {
+    if (!holiday.companyId) {
+      holiday.companyId = this.getActiveCompanyId();
+    }
     const cleanHoliday = cleanForFirestore(holiday);
-    const holidays = [...this.getCachedHolidays()];
+    const holidays = [...this.getCachedHolidays('all')];
     const idx = holidays.findIndex(h => h.id === holiday.id);
     if (idx >= 0) {
       holidays[idx] = holiday;
@@ -1001,7 +1243,7 @@ class DatabaseService {
   }
 
   public async deleteHoliday(holidayId: string): Promise<void> {
-    const holidays = this.getCachedHolidays().filter(h => h.id !== holidayId);
+    const holidays = this.getCachedHolidays('all').filter(h => h.id !== holidayId);
     this.memoryHolidays = holidays;
     this.memoryHolidaysTime = Date.now();
     this.setLocal('holidays', holidays);
