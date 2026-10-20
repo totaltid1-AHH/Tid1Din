@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Appointment, UserProfile, SmsTemplate } from '../../types';
 import { dbService } from '../../services/db';
+import { maskPersonalInfo } from '../../utils/crypto';
 import { smsService } from '../../services/sms';
 import { useAuth } from '../../context/AuthContext';
 import { generateTimeOptions, isValidTimeString } from '../../utils/calendar';
@@ -38,6 +39,8 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
   onAppointmentUpdated
 }) => {
   const { currentUser } = useAuth();
+  const canViewName = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientName !== false;
+  const canViewPhone = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientPhone !== false;
   const [activeTab, setActiveTab] = useState<'delay' | 'reschedule' | 'templates'>(initialTab);
 
   // Klient- og avtaledata
@@ -454,7 +457,7 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
                 </h3>
               </div>
               <p className="text-xs text-slate-500">
-                Klient: <span className="font-semibold text-slate-800">{currentApt.clientName}</span> (#{currentApt.clientNumber}) 
+                Klient: <span className="font-semibold text-slate-800">{canViewName ? currentApt.clientName : `Klient #${currentApt.clientNumber}`}</span> (#{currentApt.clientNumber}) 
                 {selectedAppointment && (
                   <span className="ml-1.5 px-1.5 py-0.2 rounded bg-sky-50 text-sky-700 font-mono text-[10px] border border-sky-100">
                     {selectedAppointment.date} kl. {selectedAppointment.startTime}
@@ -495,10 +498,14 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
               </div>
             ) : (
               <span className="font-mono font-bold text-slate-800">
-                {recipientPhone || <span className="text-rose-600 font-normal italic">Mangler mobilnummer!</span>}
+                {canViewPhone ? (
+                  recipientPhone || <span className="text-rose-600 font-normal italic">Mangler mobilnummer!</span>
+                ) : (
+                  maskPersonalInfo(recipientPhone, 'phone')
+                )}
               </span>
             )}
-            {!isEditingPhone && (
+            {!isEditingPhone && canViewPhone && (
               <button
                 onClick={() => setIsEditingPhone(true)}
                 className="text-[10px] text-sky-600 hover:underline ml-1 font-medium"
@@ -628,7 +635,7 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                  SMS-tekst til {currentApt.clientName}
+                  SMS-tekst til {canViewName ? currentApt.clientName : `Klient #${currentApt.clientNumber}`}
                 </label>
                 <textarea
                   rows={4}
@@ -750,7 +757,7 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                  Ombookings-SMS til {currentApt.clientName}
+                  Ombookings-SMS til {canViewName ? currentApt.clientName : `Klient #${currentApt.clientNumber}`}
                 </label>
                 <textarea
                   rows={4}

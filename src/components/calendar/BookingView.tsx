@@ -33,6 +33,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { dbService } from '../../services/db';
 import { smsService } from '../../services/sms';
+import { maskPersonalInfo } from '../../utils/crypto';
 import { 
   Appointment, 
   WorkingHoursConfig, 
@@ -72,6 +73,7 @@ export const BookingView: React.FC<BookingViewProps> = ({
   initialDate 
 }) => {
   const { currentUser } = useAuth();
+  const canViewPhone = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientPhone !== false;
 
   // Synkron forhåndslesing fra minne-cache for 0ms umiddelbar rendering
   const getInitialTherapistId = (): string => {
@@ -1071,15 +1073,25 @@ export const BookingView: React.FC<BookingViewProps> = ({
                   <label className="block text-[11px] font-bold text-slate-700 uppercase">
                     Mottakers mobilnummer (SMS):
                   </label>
-                  <input
-                    type="tel"
-                    value={bookingClientPhone}
-                    onChange={(e) => setBookingClientPhone(e.target.value)}
-                    placeholder="f.eks. 91234567"
-                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none bg-white font-mono ${
-                      !bookingClientPhone.trim() ? 'border-amber-400 bg-amber-50/50' : 'border-slate-300'
-                    }`}
-                  />
+                  {canViewPhone ? (
+                    <input
+                      type="tel"
+                      value={bookingClientPhone}
+                      onChange={(e) => setBookingClientPhone(e.target.value)}
+                      placeholder="f.eks. 91234567"
+                      className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none bg-white font-mono ${
+                        !bookingClientPhone.trim() ? 'border-amber-400 bg-amber-50/50' : 'border-slate-300'
+                      }`}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      disabled
+                      readOnly
+                      value={maskPersonalInfo(bookingClientPhone, 'phone')}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-slate-100 text-slate-500 font-mono cursor-not-allowed select-none"
+                    />
+                  )}
                   {!bookingClientPhone.trim() ? (
                     <p className="text-[11px] text-amber-700 font-medium">
                       ⚠️ Mobilnummer mangler for denne klienten. Skriv inn mobilnummer her for å motta bekreftelse.

@@ -40,6 +40,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { dbService } from '../../services/db';
 import { smsService } from '../../services/sms';
+import { maskPersonalInfo } from '../../utils/crypto';
 import { AppointmentSmsModal } from '../appointments/AppointmentSmsModal';
 import { 
   Appointment, 
@@ -66,6 +67,8 @@ import { TimeRangeSelector } from './TimeRangeSelector';
 
 export const CalendarView: React.FC = () => {
   const { currentUser } = useAuth();
+  const canViewName = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientName !== false;
+  const canViewPhone = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientPhone !== false;
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
@@ -1149,7 +1152,7 @@ export const CalendarView: React.FC = () => {
                       </span>
                       {therapistAppointmentsToday.length === 1 && (
                         <span className="hidden sm:block text-[9px] font-semibold text-slate-700 truncate pl-0.5">
-                          {therapistAppointmentsToday[0].clientName}
+                          {canViewName ? therapistAppointmentsToday[0].clientName : `Klient #${therapistAppointmentsToday[0].clientNumber || 1000}`}
                         </span>
                       )}
                     </div>
@@ -1276,7 +1279,7 @@ export const CalendarView: React.FC = () => {
                               >
                                 <p className="font-extrabold text-slate-900 font-mono flex items-center gap-1.5 flex-wrap">
                                   <span>kl. {apt.startTime} - {apt.endTime}</span>
-                                  <span className="font-sans font-bold text-sky-800 truncate">&bull; {apt.clientName}</span>
+                                  <span className="font-sans font-bold text-sky-800 truncate">&bull; {canViewName ? apt.clientName : `Klient #${apt.clientNumber || 1000}`}</span>
                                   {isEditingThis && (
                                     <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded border border-amber-300">
                                       Redigerer
@@ -1342,7 +1345,7 @@ export const CalendarView: React.FC = () => {
                             {isCancellingThis && (
                               <div className="mt-2 pt-1.5 border-t border-rose-200 bg-rose-50/90 -mx-2 -mb-2 p-2 rounded-b-xl flex items-center justify-between gap-2">
                                 <p className="text-[11px] font-bold text-rose-900 truncate">
-                                  Avlyse timen for {apt.clientName}?
+                                  Avlyse timen for {canViewName ? apt.clientName : `Klient #${apt.clientNumber || 1000}`}?
                                 </p>
                                 <div className="flex items-center gap-1.5 flex-shrink-0">
                                   <button
@@ -1626,15 +1629,25 @@ export const CalendarView: React.FC = () => {
                         <label className="block text-[10px] font-bold text-slate-700 uppercase">
                           Mottakers mobilnummer (SMS):
                         </label>
-                        <input
-                          type="tel"
-                          value={bookingClientPhone}
-                          onChange={(e) => setBookingClientPhone(e.target.value)}
-                          placeholder="f.eks. 91234567"
-                          className={`w-full px-2.5 py-1.5 rounded-lg border text-xs focus:outline-none bg-white font-mono ${
-                            !bookingClientPhone.trim() ? 'border-amber-400 bg-amber-50/50' : 'border-slate-300'
-                          }`}
-                        />
+                        {canViewPhone ? (
+                          <input
+                            type="tel"
+                            value={bookingClientPhone}
+                            onChange={(e) => setBookingClientPhone(e.target.value)}
+                            placeholder="f.eks. 91234567"
+                            className={`w-full px-2.5 py-1.5 rounded-lg border text-xs focus:outline-none bg-white font-mono ${
+                              !bookingClientPhone.trim() ? 'border-amber-400 bg-amber-50/50' : 'border-slate-300'
+                            }`}
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            disabled
+                            readOnly
+                            value={maskPersonalInfo(bookingClientPhone, 'phone')}
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs bg-slate-100 text-slate-500 font-mono cursor-not-allowed select-none"
+                          />
+                        )}
                         {!bookingClientPhone.trim() ? (
                           <p className="text-[10px] text-amber-700 font-medium">
                             ⚠️ Mobilnummer mangler for denne klienten. Oppgi nummer for å motta bekreftelse på SMS.
@@ -1655,7 +1668,7 @@ export const CalendarView: React.FC = () => {
                       <div>
                         <span className="font-bold block">Oppdaterer eksisterende avtale</span>
                         <span>
-                          {existingSameClientApt.clientName} har allerede en avtale i dette tidsrommet (kl. {existingSameClientApt.startTime}–{existingSameClientApt.endTime}). Bestillingen vil oppdatere denne avtalen.
+                          {canViewName ? existingSameClientApt.clientName : `Klient #${existingSameClientApt.clientNumber || 1000}`} har allerede en avtale i dette tidsrommet (kl. {existingSameClientApt.startTime}–{existingSameClientApt.endTime}). Bestillingen vil oppdatere denne avtalen.
                         </span>
                       </div>
                     </div>
@@ -1669,7 +1682,7 @@ export const CalendarView: React.FC = () => {
                         <span className="font-bold block">Tidspunktet er opptatt for behandler</span>
                         <span>
                           {selectedTherapist?.displayName || 'Behandler'} har allerede en avtale i dette tidsrommet (kl. {therapistCollision.startTime}–{therapistCollision.endTime}
-                          {therapistCollision.clientName && currentUser?.role !== 'client' ? ` for ${therapistCollision.clientName}` : ''}).
+                          {therapistCollision.clientName && currentUser?.role !== 'client' ? ` for ${canViewName ? therapistCollision.clientName : `Klient #${therapistCollision.clientNumber || 1000}`}` : ''}).
                         </span>
                       </div>
                     </div>

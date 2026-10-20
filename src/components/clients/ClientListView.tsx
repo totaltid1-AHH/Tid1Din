@@ -18,7 +18,9 @@ import {
   Calendar,
   UserCheck,
   UserX,
-  MessageSquare
+  MessageSquare,
+  Lock,
+  ShieldAlert
 } from 'lucide-react';
 
 interface ClientListViewProps {
@@ -61,6 +63,7 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
 
   const canViewName = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientName !== false;
   const canViewPhone = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientPhone !== false;
+  const canViewEmail = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canViewClientEmail !== false;
   const canEditJournals = currentUser?.role === 'hovedadmin' || currentUser?.permissions?.canEditJournals !== false;
   const isSuperAdmin = currentUser?.role === 'hovedadmin';
 
@@ -113,11 +116,11 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
 
   const handleOpenEditClient = (client: UserProfile) => {
     setEditingClient(client);
-    setEditClientName(client.displayName);
-    setEditClientEmail(client.email);
-    setEditClientPhone(client.phone || '');
-    setEditClientAddress(client.address || '');
-    setEditClientBirthDate(client.birthDate || '');
+    setEditClientName(canViewName ? client.displayName : '');
+    setEditClientEmail((canViewEmail && canViewName) ? client.email : '');
+    setEditClientPhone((canViewPhone && canViewName) ? (client.phone || '') : '');
+    setEditClientAddress(canViewName ? (client.address || '') : '');
+    setEditClientBirthDate(canViewName ? (client.birthDate || '') : '');
     setEditClientNotes(client.notes || '');
     setEditClientIsActive(client.isActive !== false);
     setIsEditClientOpen(true);
@@ -131,11 +134,11 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
     try {
       const updatedUser: UserProfile = {
         ...editingClient,
-        displayName: editClientName.trim(),
-        email: editClientEmail.trim(),
-        phone: editClientPhone.trim(),
-        address: editClientAddress.trim(),
-        birthDate: editClientBirthDate.trim(),
+        displayName: canViewName ? editClientName.trim() : editingClient.displayName,
+        email: (canViewEmail && canViewName) ? editClientEmail.trim() : editingClient.email,
+        phone: (canViewPhone && canViewName) ? editClientPhone.trim() : editingClient.phone,
+        address: canViewName ? editClientAddress.trim() : editingClient.address,
+        birthDate: canViewName ? editClientBirthDate.trim() : editingClient.birthDate,
         notes: editClientNotes.trim(),
         isActive: editClientIsActive
       };
@@ -144,7 +147,8 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
       setClients(prev => prev.map(c => c.uid === editingClient.uid ? updatedUser : c));
       setIsEditClientOpen(false);
       setEditingClient(null);
-      setFeedbackMessage(`Endringer for ${updatedUser.displayName} ble lagret!`);
+      const targetLabel = canViewName ? updatedUser.displayName : `Klient #${updatedUser.customerNumber || 1000}`;
+      setFeedbackMessage(`Endringer for ${targetLabel} ble lagret!`);
       setTimeout(() => setFeedbackMessage(null), 2500);
     } catch (err: any) {
       alert('Kunne ikke oppdatere klient: ' + err.message);
@@ -162,10 +166,11 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
       };
       await dbService.saveUser(updatedUser);
       setClients(prev => prev.map(c => c.uid === client.uid ? updatedUser : c));
+      const targetName = canViewName ? ` (${client.displayName})` : '';
       setFeedbackMessage(
         newActiveState
-          ? `Klient #${client.customerNumber || 1000} (${client.displayName}) er nå aktivert!`
-          : `Klient #${client.customerNumber || 1000} (${client.displayName}) er nå deaktivert!`
+          ? `Klient #${client.customerNumber || 1000}${targetName} er nå aktivert!`
+          : `Klient #${client.customerNumber || 1000}${targetName} er nå deaktivert!`
       );
       setTimeout(() => setFeedbackMessage(null), 2500);
     } catch (err: any) {
@@ -581,68 +586,165 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
             <div>
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                 <Edit2 className="w-4 h-4 text-sky-600" />
-                Rediger klient
+                <span>Rediger klient</span>
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Kundenummer: #{editingClient.customerNumber || 1000}
+                Kundenummer: #{editingClient.customerNumber || 1000} {canViewName ? `(${editingClient.displayName})` : ''}
               </p>
             </div>
 
+            {!canViewName && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
+                <ShieldAlert className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <span className="font-bold block">Begrenset innsyn (GDPR)</span>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    Din brukerkonto har ikke innsyn i klientens personopplysninger (navn, e-post, telefon, adresse, fødselsdato). Disse feltene er låst for redigering for å beskytte personvernet. Du kan administrere faste notater og status.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <form onSubmit={handleSaveClient} className="space-y-3.5">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Navn *</label>
-                <input
-                  type="text"
-                  required
-                  value={editClientName}
-                  onChange={(e) => setEditClientName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">E-post *</label>
-                  <input
-                    type="email"
-                    required
-                    value={editClientEmail}
-                    onChange={(e) => setEditClientEmail(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
-                  />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700 uppercase">Navn *</label>
+                  {!canViewName && (
+                    <span className="text-[10px] text-slate-400 font-semibold flex items-center gap-1">
+                      <Lock className="w-3 h-3 text-slate-400" /> Låst & skjult
+                    </span>
+                  )}
                 </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Mobiltelefon</label>
-                  <input
-                    type="tel"
-                    value={editClientPhone}
-                    onChange={(e) => setEditClientPhone(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Fødselsdato</label>
-                  <input
-                    type="date"
-                    value={editClientBirthDate}
-                    onChange={(e) => setEditClientBirthDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Adresse</label>
+                {canViewName ? (
                   <input
                     type="text"
-                    value={editClientAddress}
-                    onChange={(e) => setEditClientAddress(e.target.value)}
-                    placeholder="Gateadresse, Poststed"
+                    required
+                    value={editClientName}
+                    onChange={(e) => setEditClientName(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
                   />
+                ) : (
+                  <input
+                    type="text"
+                    disabled
+                    readOnly
+                    value={`Klient #${editingClient.customerNumber || 1000}`}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-slate-100 text-slate-500 font-mono cursor-not-allowed select-none"
+                  />
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700 uppercase">E-post *</label>
+                    {(!canViewEmail || !canViewName) && (
+                      <span className="text-[10px] text-slate-400 font-semibold flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-slate-400" /> Låst & skjult
+                      </span>
+                    )}
+                  </div>
+                  {canViewEmail && canViewName ? (
+                    <input
+                      type="email"
+                      required
+                      value={editClientEmail}
+                      onChange={(e) => setEditClientEmail(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      disabled
+                      readOnly
+                      value={maskPersonalInfo(editingClient.email, 'email')}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-slate-100 text-slate-500 font-mono cursor-not-allowed select-none"
+                    />
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700 uppercase">Mobiltelefon</label>
+                    {(!canViewPhone || !canViewName) && (
+                      <span className="text-[10px] text-slate-400 font-semibold flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-slate-400" /> Låst & skjult
+                      </span>
+                    )}
+                  </div>
+                  {canViewPhone && canViewName ? (
+                    <input
+                      type="tel"
+                      value={editClientPhone}
+                      onChange={(e) => setEditClientPhone(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      disabled
+                      readOnly
+                      value={maskPersonalInfo(editingClient.phone, 'phone')}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-slate-100 text-slate-500 font-mono cursor-not-allowed select-none"
+                    />
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700 uppercase">Fødselsdato</label>
+                    {!canViewName && (
+                      <span className="text-[10px] text-slate-400 font-semibold flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-slate-400" /> Låst & skjult
+                      </span>
+                    )}
+                  </div>
+                  {canViewName ? (
+                    <input
+                      type="date"
+                      value={editClientBirthDate}
+                      onChange={(e) => setEditClientBirthDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      disabled
+                      readOnly
+                      value="••••-••-••"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-slate-100 text-slate-500 font-mono cursor-not-allowed select-none"
+                    />
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700 uppercase">Adresse</label>
+                    {!canViewName && (
+                      <span className="text-[10px] text-slate-400 font-semibold flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-slate-400" /> Låst & skjult
+                      </span>
+                    )}
+                  </div>
+                  {canViewName ? (
+                    <input
+                      type="text"
+                      value={editClientAddress}
+                      onChange={(e) => setEditClientAddress(e.target.value)}
+                      placeholder="Gateadresse, Poststed"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      disabled
+                      readOnly
+                      value="••••••••••••••••"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-slate-100 text-slate-500 font-mono cursor-not-allowed select-none"
+                    />
+                  )}
                 </div>
               </div>
 
