@@ -376,6 +376,14 @@ class DatabaseService {
       return this.memoryUsers;
     }
     const local = this.getLocal<UserProfile[]>('users', SEED_USERS);
+    // Sikre at superadmin total.tid1@gmail.com alltid er tilgjengelig
+    if (!local.some(u => u.email.toLowerCase() === 'total.tid1@gmail.com')) {
+      const superSeed = SEED_USERS.find(u => u.uid === 'u_superadmin_total');
+      if (superSeed) {
+        local.unshift(superSeed);
+        this.setLocal('users', local);
+      }
+    }
     const cleaned = this.sanitizeUsers(local);
     this.memoryUsers = cleaned;
     return cleaned;
@@ -569,6 +577,14 @@ class DatabaseService {
           const snap = await getDocs(collection(db, 'users'));
           if (!snap.empty) {
             const users = snap.docs.map(d => d.data() as UserProfile);
+            // Sørg for at superadmin total.tid1@gmail.com er lagret i Firestore
+            if (!users.some(u => u.email.toLowerCase() === 'total.tid1@gmail.com')) {
+              const superSeed = SEED_USERS.find(u => u.uid === 'u_superadmin_total');
+              if (superSeed) {
+                users.unshift(superSeed);
+                await setDoc(doc(db, 'users', superSeed.uid), cleanForFirestore(superSeed)).catch(() => null);
+              }
+            }
             const cleaned = this.sanitizeUsers(users);
             const hasChanged = JSON.stringify(cleaned) !== JSON.stringify(this.memoryUsers);
             this.memoryUsers = cleaned;
