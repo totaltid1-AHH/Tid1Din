@@ -34,7 +34,8 @@ import {
   ChevronDown,
   Eye,
   EyeOff,
-  ShieldCheck
+  ShieldCheck,
+  ShieldAlert
 } from 'lucide-react';
 import { formatTherapistName, isDateInHoliday, isTherapistOnLeave, generateTimeOptions } from '../../utils/calendar';
 
@@ -81,6 +82,7 @@ export const SuperAdminPanel: React.FC = () => {
   const [editTherapistEmail, setEditTherapistEmail] = useState('');
   const [editTherapistPhone, setEditTherapistPhone] = useState('');
   const [editTherapistIsActive, setEditTherapistIsActive] = useState(true);
+  const [editTherapistRole, setEditTherapistRole] = useState<'admin' | 'hovedadmin'>('admin');
   const [editTherapistPerms, setEditTherapistPerms] = useState<AdminPermissions>({
     canViewClientName: true,
     canViewClientPhone: true,
@@ -199,6 +201,7 @@ export const SuperAdminPanel: React.FC = () => {
     setEditTherapistEmail(therapist.email);
     setEditTherapistPhone(therapist.phone || '');
     setEditTherapistIsActive(therapist.isActive !== false);
+    setEditTherapistRole(therapist.role === 'hovedadmin' ? 'hovedadmin' : 'admin');
     setEditTherapistPerms(therapist.permissions || {
       canViewClientName: true,
       canViewClientPhone: true,
@@ -213,6 +216,7 @@ export const SuperAdminPanel: React.FC = () => {
   const handleSaveTherapist = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTherapist) return;
+    const isPromotingToMain = editTherapistRole === 'hovedadmin';
     const updatedUser: UserProfile = {
       ...editingTherapist,
       displayName: editTherapistName.trim(),
@@ -221,14 +225,74 @@ export const SuperAdminPanel: React.FC = () => {
       email: editTherapistEmail.trim(),
       phone: editTherapistPhone.trim() || undefined,
       isActive: editTherapistIsActive,
-      ...(editingTherapist.role === 'admin' ? { permissions: editTherapistPerms } : {})
+      role: editTherapistRole,
+      ...(isPromotingToMain ? {
+        permissions: {
+          canViewClientName: true,
+          canViewClientPhone: true,
+          canViewClientEmail: true,
+          canEditJournals: true,
+          canManageAppointments: true
+        }
+      } : { permissions: editTherapistPerms })
     };
     await dbService.saveUser(updatedUser);
     setUsers(users.map(u => u.uid === editingTherapist.uid ? updatedUser : u));
     setIsEditTherapistOpen(false);
     setEditingTherapist(null);
+    if (currentUser) {
+      await dbService.logAction(
+        { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
+        'update_admin_permissions',
+        `Endret profil og rolle for ${updatedUser.displayName} til ${updatedUser.role === 'hovedadmin' ? 'Hovedadministrator (Super-admin)' : 'Terapeut/Klinikkadministrator'}`
+      );
+    }
     setSaveSuccessMessage(`Endringer for ${formatTherapistName(updatedUser.displayName)} ble lagret!`);
     setTimeout(() => setSaveSuccessMessage(null), 2500);
+  };
+
+  const handleQuickRoleToggle = async (therapist: UserProfile, newRole: 'admin' | 'hovedadmin') => {
+    if (therapist.uid === currentUser?.uid && newRole !== 'hovedadmin') {
+      alert('Du kan ikke fjerne hovedadministrator-rollen fra din egen innloggede brukerkonto.');
+      return;
+    }
+
+    const isPromote = newRole === 'hovedadmin';
+    const confirmMsg = isPromote 
+      ? `Vil du gjøre ${therapist.displayName} til Hovedadministrator (Super-admin)?\n\nBrukeren vil få nøyaktig samme rettigheter som super-admin, inkludert full tilgang til systeminnstillinger, API-nøkler, SMS-konfigurasjon og alle pasientopplysninger.`
+      : `Vil du endre rollen for ${therapist.displayName} fra Hovedadministrator til Terapeut/Klinikkadministrator?`;
+
+    if (!window.confirm(confirmMsg)) {
+      return;
+    }
+
+    const updatedUser: UserProfile = {
+      ...therapist,
+      role: newRole,
+      ...(isPromote ? {
+        permissions: {
+          canViewClientName: true,
+          canViewClientPhone: true,
+          canViewClientEmail: true,
+          canEditJournals: true,
+          canManageAppointments: true
+        }
+      } : {})
+    };
+
+    await dbService.saveUser(updatedUser);
+    setUsers(users.map(u => u.uid === therapist.uid ? updatedUser : u));
+
+    if (currentUser) {
+      await dbService.logAction(
+        { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
+        'update_admin_permissions',
+        `Endret rolle for ${updatedUser.displayName} til ${isPromote ? 'Hovedadministrator (Super-admin)' : 'Terapeut/Klinikkadministrator'}`
+      );
+    }
+
+    setSaveSuccessMessage(`${updatedUser.displayName} er nå oppdatert til ${isPromote ? 'Hovedadministrator (Super-admin)' : 'Terapeut'}!`);
+    setTimeout(() => setSaveSuccessMessage(null), 3000);
   };
 
   const handleToggleTherapistActive = async (therapistUid: string) => {
@@ -576,6 +640,30 @@ export const SuperAdminPanel: React.FC = () => {
                       {/* Handlinger */}
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                          {/* Hurtigknapp for å sette eller fjerne Hovedadmin */}
+                          {currentUser?.role === 'hovedadmin' && therapist.uid !== currentUser.uid && (
+                            therapist.role !== 'hovedadmin' ? (
+                              <button
+                                type="button"
+                                onClick={() => handleQuickRoleToggle(therapist, 'hovedadmin')}
+                                className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                                title="Gjør til Hovedadministrator (Super-admin med fulle rettigheter)"
+                              >
+                                <ShieldAlert className="w-3.5 h-3.5 text-indigo-600" />
+                                <span>Gjør til Hovedadmin</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleQuickRoleToggle(therapist, 'admin')}
+                                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                                title="Sett rolle tilbake til vanlig Terapeut / Klinikkadministrator"
+                              >
+                                <span>Endre til Terapeut</span>
+                              </button>
+                            )
+                          )}
+
                           {/* Rediger knapp */}
                           <button
                             type="button"
@@ -1818,8 +1906,42 @@ export const SuperAdminPanel: React.FC = () => {
                 </label>
               </div>
 
+              {/* Rolle (kun Hovedadmin kan endre) */}
+              {currentUser?.role === 'hovedadmin' && (
+                <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">
+                    Brukertype / Rolle
+                  </label>
+                  <select
+                    value={editTherapistRole}
+                    disabled={editingTherapist.uid === currentUser?.uid}
+                    onChange={(e) => setEditTherapistRole(e.target.value as 'admin' | 'hovedadmin')}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs text-slate-800 bg-white font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none disabled:bg-slate-100 disabled:cursor-not-allowed"
+                  >
+                    <option value="admin">Terapeut / Klinikkadministrator (admin)</option>
+                    <option value="hovedadmin">Hovedadministrator / Super-admin (hovedadmin - fulle rettigheter)</option>
+                  </select>
+                  {editingTherapist.uid === currentUser?.uid && (
+                    <p className="text-[10px] text-slate-400">
+                      Du kan ikke fjerne hovedadministrator-rollen fra din egen innloggede konto.
+                    </p>
+                  )}
+                  {editTherapistRole === 'hovedadmin' && (
+                    <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs flex items-start gap-2.5 mt-2">
+                      <ShieldAlert className="w-4 h-4 text-indigo-600 flex-shrink-0 mt-0.5" />
+                      <div className="space-y-0.5">
+                        <span className="font-bold block">Fulle super-admin rettigheter</span>
+                        <p className="text-[11px] text-indigo-800 leading-relaxed">
+                          Hovedadministrator har nøyaktig samme rettigheter som Super-admin (full tilgang til Super-admin-menyen, GatewayAPI, SMS-maler, systemlogger, behandlingssted og alle pasientjournaler).
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Rettigheter hvis admin */}
-              {editingTherapist.role === 'admin' && (
+              {editTherapistRole === 'admin' && (
                 <div className="space-y-2 pt-1 border-t border-slate-100">
                   <p className="text-xs font-bold text-slate-700 uppercase">Innsynsrettigheter & Tilgang</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">

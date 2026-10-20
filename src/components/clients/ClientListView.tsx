@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { dbService } from '../../services/db';
-import { UserProfile } from '../../types';
+import { UserProfile, UserRole } from '../../types';
 import { maskPersonalInfo } from '../../utils/crypto';
 import { JournalModal } from '../journal/JournalModal';
 import { AppointmentSmsModal } from '../appointments/AppointmentSmsModal';
@@ -57,6 +57,7 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
   const [editClientBirthDate, setEditClientBirthDate] = useState('');
   const [editClientNotes, setEditClientNotes] = useState('');
   const [editClientIsActive, setEditClientIsActive] = useState(true);
+  const [editClientRole, setEditClientRole] = useState<UserRole>('client');
 
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -123,6 +124,7 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
     setEditClientBirthDate(canViewName ? (client.birthDate || '') : '');
     setEditClientNotes(client.notes || '');
     setEditClientIsActive(client.isActive !== false);
+    setEditClientRole(client.role || 'client');
     setIsEditClientOpen(true);
   };
 
@@ -140,7 +142,17 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
         address: canViewName ? editClientAddress.trim() : editingClient.address,
         birthDate: canViewName ? editClientBirthDate.trim() : editingClient.birthDate,
         notes: editClientNotes.trim(),
-        isActive: editClientIsActive
+        isActive: editClientIsActive,
+        role: isSuperAdmin ? editClientRole : (editingClient.role || 'client'),
+        ...(isSuperAdmin && editClientRole === 'hovedadmin' ? {
+          permissions: {
+            canViewClientName: true,
+            canViewClientPhone: true,
+            canViewClientEmail: true,
+            canEditJournals: true,
+            canManageAppointments: true
+          }
+        } : {})
       };
 
       await dbService.saveUser(updatedUser);
@@ -758,6 +770,28 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 resize-none"
                 />
               </div>
+
+              {/* Rolle (hvis super-admin) */}
+              {isSuperAdmin && (
+                <div className="space-y-1 pt-1 border-t border-slate-100">
+                  <label className="block text-xs font-semibold text-slate-700 uppercase">Brukertype / Rolle</label>
+                  <select
+                    value={editClientRole}
+                    onChange={(e) => setEditClientRole(e.target.value as UserRole)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-medium focus:ring-2 focus:ring-sky-500 bg-white"
+                  >
+                    <option value="client">Klient (Pasient)</option>
+                    <option value="admin">Terapeut / Klinikkadministrator</option>
+                    <option value="hovedadmin">Hovedadministrator / Super-admin (Fulle rettigheter)</option>
+                  </select>
+                  {editClientRole === 'hovedadmin' && (
+                    <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs flex items-center gap-2 mt-1">
+                      <ShieldAlert className="w-3.5 h-3.5 text-indigo-600 flex-shrink-0" />
+                      <span>Brukeren forfremmes til Hovedadministrator med fulle rettigheter som super-admin.</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Aktiv / Deaktivert status */}
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
