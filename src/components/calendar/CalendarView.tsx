@@ -34,7 +34,8 @@ import {
   ExternalLink,
   Plus,
   Edit2,
-  Trash2
+  Trash2,
+  MessageSquare
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { dbService } from '../../services/db';
@@ -97,6 +98,7 @@ export const CalendarView: React.FC = () => {
   const [isOnlineMeeting, setIsOnlineMeeting] = useState(false);
   const [bookingNotes, setBookingNotes] = useState('');
   const [selectedClientId, setSelectedClientId] = useState<string>('');
+  const [sendConfirmationSms, setSendConfirmationSms] = useState(true);
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
   const [bookingSuccessMessage, setBookingSuccessMessage] = useState<string | null>(null);
   const [editingAppointmentId, setEditingAppointmentId] = useState<string | null>(null);
@@ -256,13 +258,26 @@ export const CalendarView: React.FC = () => {
     : [];
 
   const currentClientId = currentUser?.role === 'client' ? currentUser.uid : selectedClientId;
+  const currentClientObj = currentUser?.role === 'client' 
+    ? currentUser 
+    : (clients.find(c => c.uid === currentClientId) || clients[0]);
+  const currentClientName = currentClientObj?.displayName;
+
+  const isAppointmentForCurrentClient = (a: Appointment): boolean => {
+    if (currentClientId && a.clientId && a.clientId === currentClientId) return true;
+    if (currentClientName && a.clientName && a.clientName.trim().toLowerCase() === currentClientName.trim().toLowerCase()) return true;
+    return false;
+  };
+
   const bookingStartMin = parseMinutes(bookingStartTime);
   const bookingEndMin = parseMinutes(bookingEndTime);
 
-  // Kollisjonssjekk for behandler (overlappende tidsrom med eksisterende bekreftet avtale)
+  // Kollisjonssjekk for behandler (overlappende tidsrom med eksisterende bekreftet avtale for en ANNEN person)
   const therapistCollision = appointments.find(a => {
     if (a.date !== selectedDateStr || a.status === 'cancelled') return false;
     if (editingAppointmentId && a.id === editingAppointmentId) return false;
+    // Dersom avtalen er for samme person som det bestilles time for, skal det IKKE varsles om kollisjon
+    if (isAppointmentForCurrentClient(a)) return false;
     const aTherapistId = a.therapistId || therapists[0]?.uid;
     if (aTherapistId !== selectedTherapistId) return false;
     const aStart = parseMinutes(a.startTime);
@@ -270,15 +285,31 @@ export const CalendarView: React.FC = () => {
     return bookingStartMin < aEnd && bookingEndMin > aStart;
   });
 
-  // Kollisjonssjekk for klient (klienten kan ikke bookes inn på to timer samtidig)
+  // Kollisjonssjekk for klient (klienten kan ikke bookes inn på to timer samtidig hos EN ANNEN behandler)
   const clientCollision = appointments.find(a => {
     if (a.date !== selectedDateStr || a.status === 'cancelled') return false;
     if (editingAppointmentId && a.id === editingAppointmentId) return false;
-    if (!currentClientId || a.clientId !== currentClientId) return false;
+    if (!isAppointmentForCurrentClient(a)) return false;
+    const aTherapistId = a.therapistId || therapists[0]?.uid;
+    // Dersom timen er hos den samme behandleren, er det denne avtalen som oppdateres/avtales (ikke en kollisjon hos annen behandler)
+    if (aTherapistId === selectedTherapistId) return false;
     const aStart = parseMinutes(a.startTime);
     const aEnd = parseMinutes(a.endTime);
     return bookingStartMin < aEnd && bookingEndMin > aStart;
   });
+
+  // Eksisterende avtale for samme person hos denne behandleren i valgt tidsrom
+  const existingSameClientApt = editingAppointmentId
+    ? appointments.find(a => a.id === editingAppointmentId)
+    : appointments.find(a => {
+        if (a.date !== selectedDateStr || a.status === 'cancelled') return false;
+        const aTherapistId = a.therapistId || therapists[0]?.uid;
+        if (aTherapistId !== selectedTherapistId) return false;
+        if (!isAppointmentForCurrentClient(a)) return false;
+        const aStart = parseMinutes(a.startTime);
+        const aEnd = parseMinutes(a.endTime);
+        return bookingStartMin < aEnd && bookingEndMin > aStart;
+      });
 
   const getSmartInitialStartTime = (dayStr: string, therapistId: string, durMin: number): string => {
     const dayApts = appointments.filter(a => 
@@ -352,6 +383,8 @@ export const CalendarView: React.FC = () => {
     setBookingPrice(workingHours?.prices?.single ?? 950);
     setBookingNotes('');
     setIsOnlineMeeting(false);
+    setSendConfirmationSms(true);
+    setSendConfirmationSms(true);
     if (currentUser?.role !== 'client' && clients.length > 0 && !selectedClientId) {
       setSelectedClientId(clients[0].uid);
     }
@@ -368,6 +401,7 @@ export const CalendarView: React.FC = () => {
     setEditingAppointmentId(apt.id);
     setCancellingAptId(null);
     setSelectedClientId(apt.clientId);
+    setSendConfirmationSms(true);
     setBookingStartTime(apt.startTime);
     setBookingEndTime(apt.endTime);
     setBookingPrice(apt.price);
@@ -397,6 +431,7 @@ export const CalendarView: React.FC = () => {
     setBookingPrice(workingHours?.prices?.single ?? 950);
     setBookingNotes('');
     setIsOnlineMeeting(false);
+    setSendConfirmationSms(true);
   };
 
   const handleCancelAppointment = async (aptId: string) => {
@@ -496,18 +531,19 @@ export const CalendarView: React.FC = () => {
     const now = new Date();
     const targetStartDateTime = new Date(`${selectedDateStr}T${bookingStartTime}`);
 
-    if (editingAppointmentId) {
-      const existingApt = appointments.find(a => a.id === editingAppointmentId);
-      if (existingApt) {
-        const existingEnd = new Date(`${existingApt.date}T${existingApt.endTime}`);
-        if (existingEnd < now) {
-          alert('Tidligere eller gjennomførte timer kan ikke endres.');
-          return;
-        }
-        if (targetStartDateTime < now) {
-          alert('Det er ikke mulig å flytte en avtale tilbake i tid. Vennligst velg et fremtidig tidspunkt.');
-          return;
-        }
+    const activeEditingApt = editingAppointmentId 
+      ? appointments.find(a => a.id === editingAppointmentId) 
+      : existingSameClientApt;
+
+    if (activeEditingApt) {
+      const existingEnd = new Date(`${activeEditingApt.date}T${activeEditingApt.endTime}`);
+      if (existingEnd < now) {
+        alert('Tidligere eller gjennomførte timer kan ikke endres.');
+        return;
+      }
+      if (targetStartDateTime < now) {
+        alert('Det er ikke mulig å flytte en avtale tilbake i tid. Vennligst velg et fremtidig tidspunkt.');
+        return;
       }
     } else {
       if (targetStartDateTime < now) {
@@ -547,45 +583,61 @@ export const CalendarView: React.FC = () => {
       if (dur >= clinicDur * 3) slotType = 'triple';
       else if (dur >= clinicDur * 2) slotType = 'double';
 
-      if (editingAppointmentId) {
-        const existingApt = appointments.find(a => a.id === editingAppointmentId);
-        if (existingApt) {
-          const meetingLink = isOnlineMeeting 
-            ? (existingApt.meetingLink || smsService.generateMeetingLink(existingApt.id)) 
-            : undefined;
+      if (activeEditingApt) {
+        const meetingLink = isOnlineMeeting 
+          ? (activeEditingApt.meetingLink || smsService.generateMeetingLink(activeEditingApt.id)) 
+          : undefined;
 
-          const updatedAppointment: Appointment = {
-            ...existingApt,
-            clientId: clientObj.uid,
-            clientNumber: clientObj.customerNumber || 1000,
-            clientName: clientObj.displayName,
-            clientPhone: clientObj.phone || existingApt.clientPhone || '',
-            clientEmail: clientObj.email || existingApt.clientEmail || '',
-            startTime: bookingStartTime,
-            endTime: bookingEndTime,
-            durationMinutes: dur,
-            slotType,
-            price: bookingPrice,
-            isOnline: isOnlineMeeting,
-            meetingLink,
-            notes: bookingNotes || undefined,
-            updatedAt: new Date().toISOString()
-          };
+        const updatedAppointment: Appointment = {
+          ...activeEditingApt,
+          clientId: clientObj.uid,
+          clientNumber: clientObj.customerNumber || 1000,
+          clientName: clientObj.displayName,
+          clientPhone: clientObj.phone || activeEditingApt.clientPhone || '',
+          clientEmail: clientObj.email || activeEditingApt.clientEmail || '',
+          startTime: bookingStartTime,
+          endTime: bookingEndTime,
+          durationMinutes: dur,
+          slotType,
+          price: bookingPrice,
+          isOnline: isOnlineMeeting,
+          meetingLink,
+          notes: bookingNotes || activeEditingApt.notes || undefined,
+          updatedAt: new Date().toISOString()
+        };
 
-          await dbService.saveAppointment(updatedAppointment);
-          await dbService.logAction(
-            { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
-            'update_appointment',
-            `Endret time for ${clientObj.displayName} den ${updatedAppointment.date} til kl. ${updatedAppointment.startTime}–${updatedAppointment.endTime}`
-          );
+        await dbService.saveAppointment(updatedAppointment);
 
-          await loadData();
-          setIsDaySlotsModalOpen(false);
-          setEditingAppointmentId(null);
-          setBookingSuccessMessage(`Avtalen for ${clientObj.displayName} ble oppdatert!`);
-          setTimeout(() => setBookingSuccessMessage(null), 3000);
-          return;
+        // Send bekreftelse dersom avhuket
+        let smsSentOk = false;
+        if (sendConfirmationSms) {
+          try {
+            const smsLog = await Promise.race([
+              smsService.sendBookingConfirmation(updatedAppointment),
+              new Promise<null>((_, reject) => setTimeout(() => reject(new Error('SMS timeout')), 3500))
+            ]);
+            if (smsLog?.status === 'sent') smsSentOk = true;
+          } catch (smsErr) {
+            console.warn('SMS-sending feilet eller tok lang tid:', smsErr);
+          }
         }
+
+        await dbService.logAction(
+          { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
+          'update_appointment',
+          `Endret time for ${clientObj.displayName} den ${updatedAppointment.date} til kl. ${updatedAppointment.startTime}–${updatedAppointment.endTime}`
+        );
+
+        await loadData();
+        setIsDaySlotsModalOpen(false);
+        setEditingAppointmentId(null);
+        setBookingSuccessMessage(
+          sendConfirmationSms
+            ? `Avtalen for ${clientObj.displayName} ble oppdatert! Bekreftelsesmelding ${smsSentOk ? 'sendt' : 'registrert'}.`
+            : `Avtalen for ${clientObj.displayName} ble oppdatert (uten utsendelse av bekreftelsesmelding).`
+        );
+        setTimeout(() => setBookingSuccessMessage(null), 3000);
+        return;
       }
 
       const appointmentId = 'apt_' + Date.now();
@@ -615,16 +667,18 @@ export const CalendarView: React.FC = () => {
 
       await dbService.saveAppointment(newAppointment);
 
-      // Send SMS med sikker timeout (maks 3,5 sekunder)
+      // Send bekreftelse dersom avhuket
       let smsSentOk = false;
-      try {
-        const smsLog = await Promise.race([
-          smsService.sendBookingConfirmation(newAppointment),
-          new Promise<null>((_, reject) => setTimeout(() => reject(new Error('SMS timeout')), 3500))
-        ]);
-        if (smsLog?.status === 'sent') smsSentOk = true;
-      } catch (smsErr) {
-        console.warn('SMS-sending tok lang tid eller feilet, fortsetter booking:', smsErr);
+      if (sendConfirmationSms) {
+        try {
+          const smsLog = await Promise.race([
+            smsService.sendBookingConfirmation(newAppointment),
+            new Promise<null>((_, reject) => setTimeout(() => reject(new Error('SMS timeout')), 3500))
+          ]);
+          if (smsLog?.status === 'sent') smsSentOk = true;
+        } catch (smsErr) {
+          console.warn('SMS-sending tok lang tid eller feilet, fortsetter booking:', smsErr);
+        }
       }
 
       await dbService.logAction(
@@ -635,7 +689,11 @@ export const CalendarView: React.FC = () => {
 
       await loadData();
       setIsDaySlotsModalOpen(false);
-      setBookingSuccessMessage(`Timen er bekreftet for ${clientObj.displayName}! SMS-varsel ${smsSentOk ? 'sendt' : 'registrert'}.`);
+      setBookingSuccessMessage(
+        sendConfirmationSms
+          ? `Timen er bekreftet for ${clientObj.displayName}! Bekreftelsesmelding ${smsSentOk ? 'sendt' : 'registrert'}.`
+          : `Timen er bekreftet for ${clientObj.displayName} (uten utsendelse av bekreftelsesmelding).`
+      );
       setBookingNotes('');
     } catch (e: any) {
       alert('Feil ved bestilling: ' + e.message);
@@ -1287,7 +1345,7 @@ export const CalendarView: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                       <Clock className="w-3.5 h-3.5 text-sky-600" />
-                      <span>{editingAppointmentId ? 'Endre avtale' : 'Avtal time'}</span>
+                      <span>{editingAppointmentId || existingSameClientApt ? 'Endre avtale' : 'Avtal time'}</span>
                     </h4>
                     {editingAppointmentId && (
                       <button
@@ -1452,6 +1510,42 @@ export const CalendarView: React.FC = () => {
                     />
                   </div>
 
+                  {/* Send bekreftelsesmelding (automatisk avhuket) */}
+                  <div className="pt-0.5">
+                    <label className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100/70 transition-colors cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={sendConfirmationSms}
+                        onChange={(e) => setSendConfirmationSms(e.target.checked)}
+                        className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 border-slate-300 cursor-pointer accent-sky-600"
+                      />
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <MessageSquare className="w-4 h-4 text-sky-600 flex-shrink-0" />
+                        <div>
+                          <span className="text-xs font-semibold text-slate-800 block leading-tight">
+                            Send bekreftelsesmelding med dato og tid
+                          </span>
+                          <span className="text-[10px] text-slate-500 block">
+                            Klienten mottar bekreftelse på SMS (automatisk avhuket)
+                          </span>
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* Info om eksisterende avtale for samme klient i dette tidsrommet */}
+                  {existingSameClientApt && !editingAppointmentId && (
+                    <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-300 text-sky-950 text-xs flex items-start gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-sky-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold block">Oppdaterer eksisterende avtale</span>
+                        <span>
+                          {existingSameClientApt.clientName} har allerede en avtale i dette tidsrommet (kl. {existingSameClientApt.startTime}–{existingSameClientApt.endTime}). Bestillingen vil oppdatere denne avtalen.
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Kollisjonsvarsel dersom tidspunkt overlapper */}
                   {therapistCollision && (
                     <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 text-xs flex items-start gap-2">
@@ -1506,11 +1600,11 @@ export const CalendarView: React.FC = () => {
                   !isValidTimeString(bookingEndTime) ||
                   calculateDurationMinutes(bookingStartTime, bookingEndTime) <= 0 ||
                   Boolean(therapistCollision || clientCollision) ||
-                  (new Date(`${selectedDateStr}T${bookingStartTime}`) < new Date())
+                  (!editingAppointmentId && !existingSameClientApt && (new Date(`${selectedDateStr}T${bookingStartTime}`) < new Date()))
                 }
                 onClick={handleConfirmBooking}
                 className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
-                  editingAppointmentId
+                  editingAppointmentId || existingSameClientApt
                     ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/20'
                     : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/20'
                 }`}
@@ -1524,7 +1618,7 @@ export const CalendarView: React.FC = () => {
                   <>
                     <Check className="w-4 h-4 flex-shrink-0" />
                     <span className="truncate">
-                      {editingAppointmentId 
+                      {editingAppointmentId || existingSameClientApt
                         ? `Lagre endring (kl. ${bookingStartTime} – ${bookingEndTime})` 
                         : `Bekreft time (kl. ${bookingStartTime} – ${bookingEndTime})`}
                     </span>

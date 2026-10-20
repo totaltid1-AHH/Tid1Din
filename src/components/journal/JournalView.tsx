@@ -47,6 +47,7 @@ import { format, addDays } from 'date-fns';
 import { nb } from 'date-fns/locale';
 import { AppointmentSmsModal } from '../appointments/AppointmentSmsModal';
 import { generateTimeOptions, isValidTimeString } from '../../utils/calendar';
+import { smsService } from '../../services/sms';
 
 interface JournalViewProps {
   initialClientId?: string | null;
@@ -169,6 +170,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
 
   // Avtal neste time samtidig (Forslag 2 & Spørsmål 2: standard 45 min slutt-tid)
   const [shouldBookNext, setShouldBookNext] = useState(false);
+  const [sendNextAptSms, setSendNextAptSms] = useState(true);
   const [nextDate, setNextDate] = useState<string>(format(addDays(new Date(), 7), 'yyyy-MM-dd'));
   const [nextStartTime, setNextStartTime] = useState<string>('12:00');
   const [nextEndTime, setNextEndTime] = useState<string>('12:45');
@@ -177,6 +179,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
 
   // Ny frittstående samtaletime-modal
   const [isNewAppointmentModalOpen, setIsNewAppointmentModalOpen] = useState(false);
+  const [newAptSendSms, setNewAptSendSms] = useState(true);
   const [newAptDate, setNewAptDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [newAptTime, setNewAptTime] = useState<string>('12:00');
   const [newAptEndTime, setNewAptEndTime] = useState<string>('12:45');
@@ -652,13 +655,25 @@ export const JournalView: React.FC<JournalViewProps> = ({
 
           await dbService.saveAppointment(nextApt);
 
+          // Send SMS bekreftelse dersom avhuket
+          if (sendNextAptSms) {
+            try {
+              await Promise.race([
+                smsService.sendBookingConfirmation(nextApt),
+                new Promise<null>((_, reject) => setTimeout(() => reject(new Error('SMS timeout')), 3500))
+              ]);
+            } catch (err) {
+              console.warn('SMS-sending feilet:', err);
+            }
+          }
+
           await dbService.logAction(
             { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
             'create_appointment',
             `Avtalte neste time for ${selectedClient.displayName} den ${nextApt.date} kl. ${nextApt.startTime}`
           );
 
-          setSaveFeedback(`Journalnotat lagret & neste time er avtalt for ${safeFormatDate(nextDate + 'T12:00:00', 'd. MMMM', nextDate)} kl. ${nextStartTime}!`);
+          setSaveFeedback(`Journalnotat lagret & neste time er avtalt for ${safeFormatDate(nextDate + 'T12:00:00', 'd. MMMM', nextDate)} kl. ${nextStartTime}!${sendNextAptSms ? ' (Bekreftelse sendt)' : ''}`);
         } else {
           setSaveFeedback('Nytt journalnotat ble lagret og kryptert!');
         }
@@ -722,6 +737,18 @@ export const JournalView: React.FC<JournalViewProps> = ({
 
       await dbService.saveAppointment(newAppointment);
 
+      // Send SMS bekreftelse dersom avhuket
+      if (newAptSendSms) {
+        try {
+          await Promise.race([
+            smsService.sendBookingConfirmation(newAppointment),
+            new Promise<null>((_, reject) => setTimeout(() => reject(new Error('SMS timeout')), 3500))
+          ]);
+        } catch (smsErr) {
+          console.warn('SMS-sending feilet:', smsErr);
+        }
+      }
+
       await dbService.logAction(
         { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
         'create_appointment',
@@ -731,7 +758,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
       setIsNewAppointmentModalOpen(false);
       setNewAptNotes('');
       await loadJournalsAndAppointments(selectedClient.uid);
-      setSaveFeedback(`Samtaletime lagt til for ${safeFormatDate(newAptDate + 'T12:00:00', 'd. MMMM', newAptDate)} kl. ${newAptTime} - ${finalEndTime}. Vises nå i kalenderen!`);
+      setSaveFeedback(`Samtaletime lagt til for ${safeFormatDate(newAptDate + 'T12:00:00', 'd. MMMM', newAptDate)} kl. ${newAptTime} - ${finalEndTime}. Vises nå i kalenderen!${newAptSendSms ? ' (Bekreftelse sendt)' : ''}`);
       setTimeout(() => setSaveFeedback(null), 3500);
     } catch (err: any) {
       alert('Kunne ikke opprette timeavtale: ' + err.message);
@@ -1721,6 +1748,24 @@ export const JournalView: React.FC<JournalViewProps> = ({
                           </button>
                         </div>
                       </div>
+
+                      {/* Send bekreftelsesmelding til klient */}
+                      <div className="pt-1">
+                        <label className="flex items-center gap-2 p-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={sendNextAptSms}
+                            onChange={(e) => setSendNextAptSms(e.target.checked)}
+                            className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 border-slate-300 cursor-pointer accent-sky-600"
+                          />
+                          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                            <MessageSquare className="w-3.5 h-3.5 text-sky-600 flex-shrink-0" />
+                            <span className="text-xs font-semibold text-slate-700">
+                              Send bekreftelsesmelding med dato og tid til klienten (SMS)
+                            </span>
+                          </div>
+                        </label>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -2019,6 +2064,29 @@ export const JournalView: React.FC<JournalViewProps> = ({
                     placeholder="f.eks. Oppfølgingssamtale etter forrige uke..."
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs text-slate-800 outline-none focus:border-sky-500"
                   />
+                </div>
+
+                {/* Send bekreftelsesmelding til klient */}
+                <div>
+                  <label className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-colors cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={newAptSendSms}
+                      onChange={(e) => setNewAptSendSms(e.target.checked)}
+                      className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 border-slate-300 cursor-pointer accent-sky-600"
+                    />
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <MessageSquare className="w-4 h-4 text-sky-600 flex-shrink-0" />
+                      <div>
+                        <span className="text-xs font-semibold text-slate-800 block">
+                          Send bekreftelsesmelding med dato og tid
+                        </span>
+                        <span className="text-[11px] text-slate-500 block">
+                          Klienten mottar bekreftelse på SMS (automatisk avhuket)
+                        </span>
+                      </div>
+                    </div>
+                  </label>
                 </div>
               </div>
 

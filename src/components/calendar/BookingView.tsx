@@ -27,7 +27,8 @@ import {
   Palmtree, 
   UserX, 
   CheckCircle2, 
-  ArrowRight
+  ArrowRight,
+  MessageSquare
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { dbService } from '../../services/db';
@@ -145,6 +146,7 @@ export const BookingView: React.FC<BookingViewProps> = ({
     return clientList[0]?.uid || '';
   });
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
+  const [sendConfirmationSms, setSendConfirmationSms] = useState(true);
 
   // Bekreftet booking-kvittering
   const [confirmedBooking, setConfirmedBooking] = useState<{
@@ -263,17 +265,41 @@ export const BookingView: React.FC<BookingViewProps> = ({
   const durationMinutes = calculateDurationMinutes(startTime, endTime);
   const targetClientId = currentUser?.role === 'client' ? currentUser.uid : selectedClientId;
 
-  // Kollisjon for behandler
+  const selectedClient = currentUser?.role === 'client' 
+    ? currentUser 
+    : clients.find(c => c.uid === targetClientId) || clients[0];
+  const selectedClientName = selectedClient?.displayName;
+
+  const isAppointmentForTargetClient = (a: Appointment): boolean => {
+    if (targetClientId && a.clientId && a.clientId === targetClientId) return true;
+    if (selectedClientName && a.clientName && a.clientName.trim().toLowerCase() === selectedClientName.trim().toLowerCase()) return true;
+    return false;
+  };
+
+  // Kollisjon for behandler (overlapp med avtale for en ANNEN klient)
   const therapistCollision = dayAppointments.find(a => {
+    // Dersom avtalen er for samme klient som det bestilles time for, skal det IKKE varsles om kollisjon
+    if (isAppointmentForTargetClient(a)) return false;
     const aStart = parseMinutes(a.startTime);
     const aEnd = parseMinutes(a.endTime);
     return startMin < aEnd && endMin > aStart;
   });
 
-  // Kollisjon for klient (uansett behandler)
+  // Kollisjon for klient (dersom klienten har avtale hos en ANNEN behandler på samme tid)
   const clientCollision = appointments.find(a => {
     if (a.date !== selectedDateStr || a.status === 'cancelled') return false;
-    if (!targetClientId || a.clientId !== targetClientId) return false;
+    if (!targetClientId || !isAppointmentForTargetClient(a)) return false;
+    const aTherapistId = a.therapistId || therapists[0]?.uid;
+    // Avtale hos samme behandler er ikke en klientkollisjon med en annen time
+    if (aTherapistId === selectedTherapistId) return false;
+    const aStart = parseMinutes(a.startTime);
+    const aEnd = parseMinutes(a.endTime);
+    return startMin < aEnd && endMin > aStart;
+  });
+
+  // Eksisterende avtale for samme klient hos denne behandleren i valgt tidsrom
+  const existingSameClientApt = dayAppointments.find(a => {
+    if (!isAppointmentForTargetClient(a)) return false;
     const aStart = parseMinutes(a.startTime);
     const aEnd = parseMinutes(a.endTime);
     return startMin < aEnd && endMin > aStart;
@@ -423,65 +449,111 @@ export const BookingView: React.FC<BookingViewProps> = ({
 
     const now = new Date();
     const targetStartDateTime = new Date(`${selectedDateStr}T${startTime}`);
-    if (targetStartDateTime < now) {
-      alert('Det er ikke mulig å opprette avtaler tilbake i tid. Vennligst velg et fremtidig tidspunkt.');
-      return;
+
+    if (existingSameClientApt) {
+      const existingEnd = new Date(`${existingSameClientApt.date}T${existingSameClientApt.endTime}`);
+      if (existingEnd < now) {
+        alert('Tidligere eller gjennomførte timer kan ikke endres.');
+        return;
+      }
+      if (targetStartDateTime < now) {
+        alert('Det er ikke mulig å flytte en avtale tilbake i tid. Vennligst velg et fremtidig tidspunkt.');
+        return;
+      }
+    } else {
+      if (targetStartDateTime < now) {
+        alert('Det er ikke mulig å opprette avtaler tilbake i tid. Vennligst velg et fremtidig tidspunkt.');
+        return;
+      }
     }
 
     setIsSubmittingBooking(true);
 
     try {
-      const appointmentId = 'apt_' + Date.now();
-      const meetingLink = isOnlineMeeting ? smsService.generateMeetingLink(appointmentId) : undefined;
-
       let slotType: 'single' | 'double' | 'triple' = 'single';
       if (durationMinutes > 120) slotType = 'triple';
       else if (durationMinutes > 60) slotType = 'double';
 
-      const newAppointment: Appointment = {
-        id: appointmentId,
-        clientId: clientObj.uid,
-        clientNumber: clientObj.customerNumber || 1000,
-        clientName: clientObj.displayName,
-        clientPhone: clientObj.phone || '',
-        clientEmail: clientObj.email || '',
-        therapistId: selectedTherapist?.uid,
-        therapistName: formatTherapistName(selectedTherapist?.displayName),
-        date: selectedDateStr,
-        startTime,
-        endTime,
-        durationMinutes,
-        slotType,
-        price,
-        isOnline: isOnlineMeeting,
-        ...(meetingLink ? { meetingLink } : {}),
-        status: 'confirmed',
-        ...(bookingNotes ? { notes: bookingNotes } : {}),
-        createdAt: new Date().toISOString()
-      };
+      let savedApt: Appointment;
+      if (existingSameClientApt) {
+        const meetingLink = isOnlineMeeting 
+          ? (existingSameClientApt.meetingLink || smsService.generateMeetingLink(existingSameClientApt.id)) 
+          : undefined;
 
-      await dbService.saveAppointment(newAppointment);
+        savedApt = {
+          ...existingSameClientApt,
+          clientId: clientObj.uid,
+          clientNumber: clientObj.customerNumber || 1000,
+          clientName: clientObj.displayName,
+          clientPhone: clientObj.phone || existingSameClientApt.clientPhone || '',
+          clientEmail: clientObj.email || existingSameClientApt.clientEmail || '',
+          startTime,
+          endTime,
+          durationMinutes,
+          slotType,
+          price,
+          isOnline: isOnlineMeeting,
+          meetingLink,
+          notes: bookingNotes || existingSameClientApt.notes,
+          updatedAt: new Date().toISOString()
+        };
+        await dbService.saveAppointment(savedApt);
 
-      // Send SMS med sikker timeout (maks 3,5 sek)
-      let smsStatus = 'simulert';
-      try {
-        const smsLog = await Promise.race([
-          smsService.sendBookingConfirmation(newAppointment),
-          new Promise<null>((_, reject) => setTimeout(() => reject(new Error('SMS timeout')), 3500))
-        ]);
-        if (smsLog?.status === 'sent') smsStatus = 'sendt';
-      } catch (smsErr) {
-        console.warn('SMS-sending feilet eller tok lang tid:', smsErr);
+        await dbService.logAction(
+          { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
+          'update_appointment',
+          `Oppdaterte time hos ${selectedTherapist?.displayName || 'terapeut'} for ${clientObj.displayName} den ${savedApt.date} kl. ${savedApt.startTime}–${savedApt.endTime}`
+        );
+      } else {
+        const appointmentId = 'apt_' + Date.now();
+        const meetingLink = isOnlineMeeting ? smsService.generateMeetingLink(appointmentId) : undefined;
+
+        savedApt = {
+          id: appointmentId,
+          clientId: clientObj.uid,
+          clientNumber: clientObj.customerNumber || 1000,
+          clientName: clientObj.displayName,
+          clientPhone: clientObj.phone || '',
+          clientEmail: clientObj.email || '',
+          therapistId: selectedTherapist?.uid,
+          therapistName: formatTherapistName(selectedTherapist?.displayName),
+          date: selectedDateStr,
+          startTime,
+          endTime,
+          durationMinutes,
+          slotType,
+          price,
+          isOnline: isOnlineMeeting,
+          ...(meetingLink ? { meetingLink } : {}),
+          status: 'confirmed',
+          ...(bookingNotes ? { notes: bookingNotes } : {}),
+          createdAt: new Date().toISOString()
+        };
+        await dbService.saveAppointment(savedApt);
+
+        await dbService.logAction(
+          { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
+          'create_appointment',
+          `Bestilte time hos ${selectedTherapist?.displayName || 'terapeut'} for ${clientObj.displayName} den ${savedApt.date} kl. ${savedApt.startTime}–${savedApt.endTime}`
+        );
       }
 
-      await dbService.logAction(
-        { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
-        'create_appointment',
-        `Bestilte time hos ${selectedTherapist?.displayName || 'terapeut'} for ${clientObj.displayName} den ${newAppointment.date} kl. ${newAppointment.startTime}–${newAppointment.endTime}`
-      );
+      // Send SMS med sikker timeout dersom avhuket
+      let smsStatus = sendConfirmationSms ? 'simulert' : 'ikke_sendt';
+      if (sendConfirmationSms) {
+        try {
+          const smsLog = await Promise.race([
+            smsService.sendBookingConfirmation(savedApt),
+            new Promise<null>((_, reject) => setTimeout(() => reject(new Error('SMS timeout')), 3500))
+          ]);
+          if (smsLog?.status === 'sent') smsStatus = 'sendt';
+        } catch (smsErr) {
+          console.warn('SMS-sending feilet eller tok lang tid:', smsErr);
+        }
+      }
 
       await loadData();
-      setConfirmedBooking({ appointment: newAppointment, smsStatus });
+      setConfirmedBooking({ appointment: savedApt, smsStatus });
       setBookingNotes('');
     } catch (e: any) {
       alert('Feil ved bestilling: ' + e.message);
@@ -524,10 +596,12 @@ export const BookingView: React.FC<BookingViewProps> = ({
             </div>
             <div>
               <h2 className="text-lg sm:text-xl font-black text-slate-900">
-                Timen din er bekreftet!
+                {confirmedBooking.appointment.updatedAt ? 'Avtalen er oppdatert!' : 'Timen er bekreftet!'}
               </h2>
               <p className="text-xs text-slate-500">
-                SMS-varsel er {confirmedBooking.smsStatus === 'sendt' ? 'sendt' : 'registrert'} til {confirmedBooking.appointment.clientPhone || 'ditt telefonnummer'}.
+                {confirmedBooking.smsStatus === 'ikke_sendt'
+                  ? 'Bekreftelsesmelding ble ikke sendt (fravalgt av bestiller).'
+                  : `SMS-varsel er ${confirmedBooking.smsStatus === 'sendt' ? 'sendt' : 'registrert'} til ${confirmedBooking.appointment.clientPhone || 'ditt telefonnummer'}.`}
               </p>
             </div>
           </div>
@@ -932,6 +1006,44 @@ export const BookingView: React.FC<BookingViewProps> = ({
               />
             </div>
 
+            {/* SEND BEKREFTELSESMELDING (AUTOMATISK AVHUKET) */}
+            <div>
+              <label className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100/70 transition-colors cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={sendConfirmationSms}
+                  onChange={(e) => setSendConfirmationSms(e.target.checked)}
+                  className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 border-slate-300 cursor-pointer accent-sky-600"
+                />
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <MessageSquare className="w-4 h-4 text-sky-600 flex-shrink-0" />
+                  <div>
+                    <span className="text-xs font-semibold text-slate-800 block">
+                      Send bekreftelsesmelding med dato og tid
+                    </span>
+                    <span className="text-[11px] text-slate-500 block">
+                      Klienten mottar bekreftelse på SMS (automatisk avhuket)
+                    </span>
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            {/* Info dersom avtalen oppdaterer en eksisterende avtale for samme klient */}
+            {existingSameClientApt && (
+              <div className="p-3.5 rounded-xl bg-sky-50 border border-sky-300 text-sky-950 text-xs flex items-start gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-sky-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-sky-900">
+                    Oppdaterer eksisterende avtale
+                  </p>
+                  <p className="text-sky-800 mt-0.5">
+                    Det er allerede registrert en avtale fra kl. <strong>{existingSameClientApt.startTime}</strong> til <strong>{existingSameClientApt.endTime}</strong> for denne klienten. Bestillingen vil oppdatere denne avtalen.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* OVERLAPP-ADVARSEL */}
             {therapistCollision && (
               <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-950 text-xs flex items-start gap-2.5">
@@ -985,10 +1097,14 @@ export const BookingView: React.FC<BookingViewProps> = ({
                   !isValidTimeString(endTime) ||
                   durationMinutes <= 0 || 
                   Boolean(therapistCollision || clientCollision) ||
-                  (new Date(`${selectedDateStr}T${startTime}`) < new Date())
+                  (!existingSameClientApt && (new Date(`${selectedDateStr}T${startTime}`) < new Date()))
                 }
                 onClick={handleConfirmBooking}
-                className="w-full py-3 px-4 rounded-xl bg-sky-600 hover:bg-sky-700 active:scale-98 text-white font-bold text-xs sm:text-sm shadow-md shadow-sky-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`w-full py-3 px-4 rounded-xl text-white font-bold text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                  existingSameClientApt
+                    ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20 active:scale-98'
+                    : 'bg-sky-600 hover:bg-sky-700 shadow-sky-600/20 active:scale-98'
+                }`}
               >
                 {isSubmittingBooking ? (
                   <>
@@ -998,7 +1114,11 @@ export const BookingView: React.FC<BookingViewProps> = ({
                 ) : (
                   <>
                     <Check className="w-4 h-4" />
-                    <span>Bekreft timebestilling (kl. {startTime} – {endTime})</span>
+                    <span>
+                      {existingSameClientApt
+                        ? `Lagre endring (kl. ${startTime} – ${endTime})`
+                        : `Bekreft timebestilling (kl. ${startTime} – ${endTime})`}
+                    </span>
                   </>
                 )}
               </button>

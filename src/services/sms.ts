@@ -37,12 +37,24 @@ export class SmsService {
       }
     }
 
+    let formattedDate = appointment.date || '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(formattedDate)) {
+      const [y, m, d] = formattedDate.split('-');
+      formattedDate = `${d}.${m}.${y}`;
+    }
+
+    let formattedNewDate = extra?.newDate || appointment.date || '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(formattedNewDate)) {
+      const [y, m, d] = formattedNewDate.split('-');
+      formattedNewDate = `${d}.${m}.${y}`;
+    }
+
     return template
       .replace(/{kunde}/g, appointment.clientName || 'klient')
       .replace(/{kundenummer}/g, String(appointment.clientNumber || ''))
-      .replace(/{dato}/g, appointment.date || '')
+      .replace(/{dato}/g, formattedDate)
       .replace(/{klokkeslett}/g, appointment.startTime || '')
-      .replace(/{ny_dato}/g, extra?.newDate || appointment.date || '')
+      .replace(/{ny_dato}/g, formattedNewDate)
       .replace(/{nytt_klokkeslett}/g, calculatedNewTime || appointment.startTime || '')
       .replace(/{forsinkelse}/g, extra?.delayMinutes ? `${extra.delayMinutes} minutter` : '')
       .replace(/{behandler}/g, extra?.therapistName || appointment.therapistName || 'Terapeut')
