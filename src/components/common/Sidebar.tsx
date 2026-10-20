@@ -16,7 +16,8 @@ import {
   X, 
   BookOpen, 
   Building2, 
-  ChevronDown 
+  ChevronDown,
+  MessageSquare
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -120,7 +121,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
     const isAdmin = currentUser.role === 'admin';
     const isStaffOrAdmin = isMainAdmin || isAdmin;
 
-    // Super-admin skal KUN se bedriftsoversikten og ikke klinikkfunksjoner
+    // Super-admin har tilgang til bedrifter og SMS/API-styring
     if (isSuperAdmin) {
       return (
         <nav className="space-y-1.5 px-3">
@@ -134,6 +135,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
           >
             <Building2 className="w-4.5 h-4.5 flex-shrink-0 text-indigo-300" />
             <span>Bedrifter</span>
+          </button>
+
+          <button
+            onClick={() => handleNavClick('sms_admin')}
+            className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-bold transition-all ${
+              currentTab === 'sms_admin'
+                ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
+                : 'text-indigo-300 hover:text-white hover:bg-slate-900 border border-indigo-900/40'
+            }`}
+          >
+            <MessageSquare className="w-4.5 h-4.5 flex-shrink-0 text-indigo-300" />
+            <span>SMS-styring & API</span>
           </button>
         </nav>
       );

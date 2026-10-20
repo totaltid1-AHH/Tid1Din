@@ -13,6 +13,7 @@ import { ClientListView } from './components/clients/ClientListView';
 import { SuperAdminPanel } from './components/admin/SuperAdminPanel';
 import { SuperAdminSettingsView } from './components/admin/SuperAdminSettingsView';
 import { SuperAdminCompaniesView } from './components/admin/SuperAdminCompaniesView';
+import { SuperAdminSmsView } from './components/admin/SuperAdminSmsView';
 import { JournalView } from './components/journal/JournalView';
 import { 
   ShieldCheck, 
@@ -40,9 +41,9 @@ const AppContent: React.FC = () => {
   const [bookingInitialDate, setBookingInitialDate] = useState<string | undefined>(undefined);
   const [selectedJournalClientId, setSelectedJournalClientId] = useState<string | null>(null);
 
-  // Superadmin skal KUN se bedriftsoversikten og ikke klinikkdata
+  // Superadmin har tilgang til bedriftsoversikt og SMS-styring
   useEffect(() => {
-    if (currentUser?.role === 'superadmin' && currentTab !== 'companies') {
+    if (currentUser?.role === 'superadmin' && currentTab !== 'companies' && currentTab !== 'sms_admin') {
       setCurrentTab('companies');
     }
   }, [currentUser?.role, currentTab]);
@@ -119,9 +120,13 @@ const AppContent: React.FC = () => {
           {/* Mobil/iPad: full bredde, Desktop: max-w-7xl px-4 */}
           <main className={`w-full max-w-full lg:max-w-7xl lg:mx-auto px-0 sm:px-4 lg:px-8 py-0 sm:py-6 ${currentUser.role === 'superadmin' ? 'pb-8' : 'pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]'} lg:pb-8`}>
             
-            {/* Super-admin portal: Viser KUN bedriftsoversikt med kontaktperson, adresse, hovedadmin, brukernavn og passordfelt */}
+            {/* Super-admin portal: Viser bedriftsoversikt eller SMS-styring */}
             {currentUser.role === 'superadmin' ? (
-              <SuperAdminCompaniesView key={`companies_${currentUser.uid}`} />
+              currentTab === 'sms_admin' ? (
+                <SuperAdminSmsView key={`sms_${currentUser.uid}`} />
+              ) : (
+                <SuperAdminCompaniesView key={`companies_${currentUser.uid}`} />
+              )
             ) : (
               <>
                 {/* Fanevelging for bedriftsbrukere (hovedadmin, admin og klient) */}
