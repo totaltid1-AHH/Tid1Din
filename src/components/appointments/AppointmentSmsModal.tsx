@@ -195,7 +195,7 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
   const initRescheduleMessage = (apt: Appointment, targetDate: string, targetTime: string, tplsList?: SmsTemplate[]) => {
     const sourceTpls = tplsList || templates;
     const reschedTpl = sourceTpls.find(t => t.id === 'tpl_reschedule')?.message ||
-      'Hei {kunde}! Din avtalte time hos Tid1Din er flyttet til ny dato: {ny_dato} kl. {nytt_klokkeslett}. Vennligst ta kontakt dersom tidspunktet ikke passer.';
+      'Hei {kunde}! Din avtalte time hos {behandlingssted} er flyttet til ny dato: {ny_dato} kl. {nytt_klokkeslett}. Vennligst ta kontakt dersom tidspunktet ikke passer.';
     
     const formatted = smsService.formatMessage(reschedTpl, apt, undefined, {
       newDate: targetDate,

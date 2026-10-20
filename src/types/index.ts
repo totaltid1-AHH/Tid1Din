@@ -95,6 +95,7 @@ export interface Appointment {
   meetingLink?: string;
   status: AppointmentStatus;
   notes?: string;
+  treatmentPlace?: string; // Valgfritt behandlingssted for denne timen
   cancellationReason?: string;
   createdAt: string;
   updatedAt?: string;
@@ -138,6 +139,7 @@ export interface SmsSettings {
   id: string;
   apiKey: string;
   sender: string;
+  treatmentPlace?: string; // Navn på behandlingssted/klinikk som vises i SMS og varsler
   reminder1Enabled: boolean;
   reminder1Hours: number; // f.eks. 24
   reminder2Enabled: boolean;

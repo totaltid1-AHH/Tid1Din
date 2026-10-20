@@ -1228,20 +1228,39 @@ export const SuperAdminPanel: React.FC = () => {
           </div>
 
           <div className="space-y-3.5 text-xs">
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                Avsendernavn (Sender ID)
-              </label>
-              <input
-                type="text"
-                value={smsSettings.sender || 'Tid1Din'}
-                onChange={(e) => setSmsSettings({ ...smsSettings, sender: e.target.value })}
-                placeholder="Tid1Din"
-                className="w-full sm:w-64 px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-medium"
-              />
-              <p className="text-[10px] text-slate-400 mt-1">
-                Maks 11 tegn (f.eks. klinikkens navn). Vises som avsender på klientens mobil.
-              </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                  Navn på behandlingssted (Klinikk / Praksis)
+                </label>
+                <input
+                  type="text"
+                  value={smsSettings.treatmentPlace || ''}
+                  onChange={(e) => setSmsSettings({ ...smsSettings, treatmentPlace: e.target.value })}
+                  placeholder="F.eks. Hovden"
+                  className="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-medium"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Navnet som vises i SMS til klienter (erstatter variabelen &#123;behandlingssted&#125;).
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                  Avsendernavn (Sender ID)
+                </label>
+                <input
+                  type="text"
+                  value={smsSettings.sender || 'Hovden'}
+                  onChange={(e) => setSmsSettings({ ...smsSettings, sender: e.target.value })}
+                  placeholder="Hovden"
+                  maxLength={11}
+                  className="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-medium"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Maks 11 tegn (f.eks. Hovden). Vises som avsender i innboksen på klientens mobil.
+                </p>
+              </div>
             </div>
 
             {/* Påminnelser */}
@@ -1308,6 +1327,8 @@ export const SuperAdminPanel: React.FC = () => {
               </label>
               <div className="p-2 rounded-lg bg-sky-50/60 border border-sky-100 text-[10px] text-sky-800 flex flex-wrap gap-1.5">
                 <span className="font-bold">Tilgjengelige variabler:</span>
+                <code className="bg-white px-1 rounded border border-sky-200 font-mono">&#123;behandlingssted&#125;</code>
+                <code className="bg-white px-1 rounded border border-sky-200 font-mono">&#123;behandler&#125;</code>
                 <code className="bg-white px-1 rounded border border-sky-200 font-mono">&#123;kunde&#125;</code>
                 <code className="bg-white px-1 rounded border border-sky-200 font-mono">&#123;kundenummer&#125;</code>
                 <code className="bg-white px-1 rounded border border-sky-200 font-mono">&#123;dato&#125;</code>

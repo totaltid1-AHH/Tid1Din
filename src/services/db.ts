@@ -54,13 +54,14 @@ const DEFAULT_WORKING_HOURS: WorkingHoursConfig = {
 const DEFAULT_SMS_SETTINGS: SmsSettings = {
   id: 'default',
   apiKey: import.meta.env.VITE_GATEWAY_API_KEY || '',
-  sender: import.meta.env.VITE_GATEWAY_SENDER || 'Tid1Din',
+  sender: import.meta.env.VITE_GATEWAY_SENDER || 'Hovden',
+  treatmentPlace: 'Hovden',
   reminder1Enabled: true,
   reminder1Hours: 24,
   reminder2Enabled: true,
   reminder2Hours: 1,
-  bookingTemplate: 'Hei {kunde}! Din time hos Tid1Din er bekreftet: {dato} kl. {klokkeslett} ({varighet} min, kr {pris}). Avbestilling må skje senest 24t før. Velkommen!',
-  reminderTemplate: 'Påminnelse fra Tid1Din: Du har time {dato} kl. {klokkeslett}. Velkommen!'
+  bookingTemplate: 'Hei {kunde}! Din time hos {behandlingssted} er bekreftet: {dato} kl. {klokkeslett} ({varighet} min, kr {pris}). Avbestilling må skje senest 24t før. Velkommen!',
+  reminderTemplate: 'Påminnelse fra {behandlingssted}: Du har time {dato} kl. {klokkeslett}. Velkommen!'
 };
 
 export const DEFAULT_SMS_TEMPLATES: SmsTemplate[] = [
@@ -83,7 +84,7 @@ export const DEFAULT_SMS_TEMPLATES: SmsTemplate[] = [
     title: 'Flytting / Ombooking av time',
     category: 'reschedule',
     isDefault: true,
-    message: 'Hei {kunde}! Din avtalte time hos Tid1Din er flyttet til ny dato: {ny_dato} kl. {nytt_klokkeslett}. Vennligst ta kontakt dersom tidspunktet ikke passer.'
+    message: 'Hei {kunde}! Din avtalte time hos {behandlingssted} er flyttet til ny dato: {ny_dato} kl. {nytt_klokkeslett}. Vennligst ta kontakt dersom tidspunktet ikke passer.'
   },
   {
     id: 'tpl_welcome',
@@ -769,6 +770,10 @@ class DatabaseService {
   }
 
   // --- SMS-INNSTILLINGER & LOGGER ---
+  public getSmsSettingsSync(): SmsSettings {
+    return this.getLocal<SmsSettings>('sms_settings', DEFAULT_SMS_SETTINGS);
+  }
+
   public async getSmsSettings(): Promise<SmsSettings> {
     if (isFirebaseConfigured && db) {
       try {
@@ -776,6 +781,13 @@ class DatabaseService {
         if (snap.exists()) {
           const settings = snap.data() as SmsSettings;
           let changed = false;
+
+          // Sørg for at behandlingssted er satt
+          if (!settings.treatmentPlace) {
+            settings.treatmentPlace = settings.sender || 'Hovden';
+            changed = true;
+          }
+
           // Fjern automatisk {avbestillingslenke} dersom den finnes, da GatewayAPI blokkerer ikke-hvitelistede lenker
           if (settings.bookingTemplate && settings.bookingTemplate.includes('{avbestillingslenke}')) {
             settings.bookingTemplate = settings.bookingTemplate
@@ -787,6 +799,23 @@ class DatabaseService {
             settings.reminderTemplate = settings.reminderTemplate.replace(/\s*\{motelenke\}/g, '');
             changed = true;
           }
+
+          // Migrer eksplisitt Tid1Din i maler til {behandlingssted}
+          if (settings.bookingTemplate && settings.bookingTemplate.includes('Tid1Din')) {
+            settings.bookingTemplate = settings.bookingTemplate
+              .replace(/hos Tid1Din/gi, 'hos {behandlingssted}')
+              .replace(/fra Tid1Din/gi, 'fra {behandlingssted}')
+              .replace(/Tid1Din/g, '{behandlingssted}');
+            changed = true;
+          }
+          if (settings.reminderTemplate && settings.reminderTemplate.includes('Tid1Din')) {
+            settings.reminderTemplate = settings.reminderTemplate
+              .replace(/hos Tid1Din/gi, 'hos {behandlingssted}')
+              .replace(/fra Tid1Din/gi, 'fra {behandlingssted}')
+              .replace(/Tid1Din/g, '{behandlingssted}');
+            changed = true;
+          }
+
           if (changed) {
             await this.saveSmsSettings(settings);
           }

@@ -79,7 +79,9 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const expires = Date.now() + 10 * 60 * 1000; // 10 minutter gyldighet
 
-    const message = `Tid1Din: Din engangskode for å tilbakestille passord er ${code}. Koden er gyldig i 10 minutter.`;
+    const smsSettings = await dbService.getSmsSettings();
+    const appName = smsSettings.treatmentPlace || smsSettings.sender || 'Tid1Din';
+    const message = `${appName}: Din engangskode for å tilbakestille passord er ${code}. Koden er gyldig i 10 minutter.`;
     const res = await smsService.sendSms(user.phone, message, 'custom');
 
     setGeneratedCode(code);

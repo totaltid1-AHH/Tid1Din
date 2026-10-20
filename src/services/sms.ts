@@ -14,7 +14,9 @@ export class SmsService {
       newTime?: string;
       delayMinutes?: number;
       therapistName?: string;
-    }
+      treatmentPlace?: string;
+    },
+    settings?: SmsSettings
   ): string {
     const isLocalhost = typeof window !== 'undefined' && (
       window.location.hostname === 'localhost' || 
@@ -26,6 +28,16 @@ export class SmsService {
     const meetUrl = appointment.isOnline && appointment.meetingLink 
       ? `Møtelenke: ${appointment.meetingLink}` 
       : '';
+
+    // Aktivt behandlingssted
+    const activeSettings = settings || dbService.getSmsSettingsSync();
+    const treatmentPlace = (
+      extra?.treatmentPlace ||
+      appointment.treatmentPlace ||
+      activeSettings.treatmentPlace ||
+      activeSettings.sender ||
+      'Hovden'
+    ).trim();
 
     // Beregn evt. nytt klokkeslett ved forsinkelse dersom ikke oppgitt direkte
     let calculatedNewTime = extra?.newTime;
@@ -55,7 +67,7 @@ export class SmsService {
       formattedNewDate = `${d}.${m}.${y}`;
     }
 
-    const rawResult = template
+    let rawResult = template
       .replace(/{kunde}/g, appointment.clientName || 'klient')
       .replace(/{kundenummer}/g, String(appointment.clientNumber || ''))
       .replace(/{dato}/g, formattedDate)
@@ -66,9 +78,19 @@ export class SmsService {
       .replace(/{behandler}/g, extra?.therapistName || appointment.therapistName || 'Terapeut')
       .replace(/{varighet}/g, String(appointment.durationMinutes || 45))
       .replace(/{pris}/g, String(appointment.price || ''))
+      .replace(/{behandlingssted}/g, treatmentPlace)
+      .replace(/{klinikk}/g, treatmentPlace)
       .replace(/{avbestillingslenke}/g, cancelUrl)
       .replace(/{motelenke}/g, meetUrl)
       .trim();
+
+    // Erstatt gjenværende Tid1Din dersom behandlingsstedet er konfigurert annerledes
+    if (treatmentPlace && treatmentPlace.toLowerCase() !== 'tid1din') {
+      rawResult = rawResult
+        .replace(/hos Tid1Din/gi, `hos ${treatmentPlace}`)
+        .replace(/fra Tid1Din/gi, `fra ${treatmentPlace}`)
+        .replace(/Tid1Din/g, treatmentPlace);
+    }
 
     // Erstatt typografiske spesialtegn (en-dash, em-dash, anførselstegn) med standard GSM-tegn
     return rawResult
@@ -251,7 +273,7 @@ export class SmsService {
       return logEntry;
     }
     const settings = await dbService.getSmsSettings();
-    const message = this.formatMessage(settings.bookingTemplate, appointment);
+    const message = this.formatMessage(settings.bookingTemplate, appointment, undefined, undefined, settings);
     return await this.sendSms(appointment.clientPhone, message, 'booking', appointment.id);
   }
 
@@ -264,7 +286,7 @@ export class SmsService {
     if (reminderType === 'reminder1' && !settings.reminder1Enabled) return null;
     if (reminderType === 'reminder2' && !settings.reminder2Enabled) return null;
 
-    const message = this.formatMessage(settings.reminderTemplate, appointment);
+    const message = this.formatMessage(settings.reminderTemplate, appointment, undefined, undefined, settings);
     return await this.sendSms(appointment.clientPhone, message, reminderType, appointment.id);
   }
 }

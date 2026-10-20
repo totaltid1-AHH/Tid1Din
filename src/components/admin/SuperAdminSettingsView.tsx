@@ -5,6 +5,7 @@ import { smsService } from '../../services/sms';
 import { SmsSettings, SystemAuditLog } from '../../types';
 import { 
   ShieldAlert, 
+  Building2,
   KeyRound, 
   FileText, 
   Save, 
@@ -18,7 +19,7 @@ import { format } from 'date-fns';
 
 export const SuperAdminSettingsView: React.FC = () => {
   const { currentUser } = useAuth();
-  const [activeSubTab, setActiveSubTab] = useState<'api' | 'logs'>('api');
+  const [activeSubTab, setActiveSubTab] = useState<'clinic' | 'api' | 'logs'>('clinic');
   const [smsSettings, setSmsSettings] = useState<SmsSettings | null>(null);
   const [systemLogs, setSystemLogs] = useState<SystemAuditLog[]>([]);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
@@ -42,7 +43,14 @@ export const SuperAdminSettingsView: React.FC = () => {
   const handleSaveApiKey = async () => {
     if (!smsSettings || !currentUser) return;
     await dbService.saveSmsSettings(smsSettings);
-    setSaveSuccessMessage('GatewayAPI-nøkkel lagret!');
+    if (currentUser) {
+      await dbService.logAction(
+        { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
+        'update_sms_settings',
+        'Oppdaterte behandlingssted og systeminnstillinger'
+      );
+    }
+    setSaveSuccessMessage('Innstillinger lagret!');
     setTimeout(() => setSaveSuccessMessage(null), 2500);
   };
 
@@ -94,6 +102,16 @@ export const SuperAdminSettingsView: React.FC = () => {
         {/* Faner */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs pt-1">
           <button
+            onClick={() => setActiveSubTab('clinic')}
+            className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-all flex items-center gap-1.5 flex-shrink-0 ${
+              activeSubTab === 'clinic' ? 'bg-sky-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            <span>Behandlingssted & Profil</span>
+          </button>
+
+          <button
             onClick={() => setActiveSubTab('api')}
             className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-all flex items-center gap-1.5 flex-shrink-0 ${
               activeSubTab === 'api' ? 'bg-sky-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -115,6 +133,101 @@ export const SuperAdminSettingsView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* FANE: BEHANDLINGSSTED & KLINIKKPROFIL (SUPER-ADMIN) */}
+      {activeSubTab === 'clinic' && smsSettings && (
+        <div className="bg-white rounded-none sm:rounded-2xl p-3.5 sm:p-5 border-y sm:border border-slate-200 shadow-xs space-y-5 w-full max-w-full overflow-hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+            <div>
+              <h2 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <Building2 className="w-4 h-4 text-sky-600" />
+                Behandlingssted & SMS-profil
+              </h2>
+              <p className="text-[11px] text-slate-500">
+                Styr navnet på behandlingsstedet som vises i timebestillinger og SMS-varsler til klientene.
+              </p>
+            </div>
+            <button
+              onClick={handleSaveApiKey}
+              className="px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold flex items-center gap-1.5 self-start sm:self-center shadow-xs transition-colors cursor-pointer"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>Lagre endringer</span>
+            </button>
+          </div>
+
+          {/* Innstillingsfelter */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+              <label className="block text-[11px] font-bold text-slate-700 uppercase">
+                Navn på behandlingssted (Klinikk / Praksis)
+              </label>
+              <input
+                type="text"
+                value={smsSettings.treatmentPlace || ''}
+                onChange={(e) => setSmsSettings({ ...smsSettings, treatmentPlace: e.target.value })}
+                placeholder="F.eks. Hovden"
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs bg-white font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+              />
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                Dette navnet erstatter automatisk <em>Tid1Din</em> og variabelen <code>&#123;behandlingssted&#125;</code> i alle SMS-meldinger til klientene.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+              <label className="block text-[11px] font-bold text-slate-700 uppercase">
+                SMS Avsendernavn (Sender ID)
+              </label>
+              <input
+                type="text"
+                value={smsSettings.sender || 'Hovden'}
+                onChange={(e) => setSmsSettings({ ...smsSettings, sender: e.target.value })}
+                placeholder="Hovden"
+                maxLength={11}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs bg-white font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+              />
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                Maks 11 tegn (f.eks. Hovden). Dette er navnet som står som avsender i innboksen på klientens mobiltelefon.
+              </p>
+            </div>
+          </div>
+
+          {/* Forhåndsvisning av SMS */}
+          <div className="space-y-2.5 pt-2 border-t border-slate-100">
+            <span className="text-xs font-bold text-slate-800 uppercase block">
+              Forhåndsvisning av SMS til klienter
+            </span>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Forhåndsvisning: Bekreftelse */}
+              <div className="p-3.5 rounded-xl bg-emerald-50/60 border border-emerald-200 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] font-bold text-emerald-900">
+                  <span>Timebekreftelse ved bestilling:</span>
+                  <span className="text-[10px] font-mono text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-200">
+                    Fra: {smsSettings.sender || 'Hovden'}
+                  </span>
+                </div>
+                <div className="text-xs text-slate-800 bg-white p-3 rounded-lg border border-emerald-100 shadow-xs leading-relaxed font-sans">
+                  Hei Kari Nordmann! Din time hos <strong className="text-emerald-700">{smsSettings.treatmentPlace || smsSettings.sender || 'Hovden'}</strong> er bekreftet: 21.10.2026 kl. 10:00 (45 min, kr 950). Avbestilling må skje senest 24t før. Velkommen!
+                </div>
+              </div>
+
+              {/* Forhåndsvisning: Påminnelse */}
+              <div className="p-3.5 rounded-xl bg-sky-50/60 border border-sky-200 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] font-bold text-sky-900">
+                  <span>Påminnelse 24t før timen:</span>
+                  <span className="text-[10px] font-mono text-sky-700 bg-white px-2 py-0.5 rounded border border-sky-200">
+                    Fra: {smsSettings.sender || 'Hovden'}
+                  </span>
+                </div>
+                <div className="text-xs text-slate-800 bg-white p-3 rounded-lg border border-sky-100 shadow-xs leading-relaxed font-sans">
+                  Påminnelse fra <strong className="text-sky-700">{smsSettings.treatmentPlace || smsSettings.sender || 'Hovden'}</strong>: Du har time 21.10.2026 kl. 10:00. Velkommen!
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* FANE: GATEWAYAPI NØKKEL */}
       {activeSubTab === 'api' && smsSettings && (
