@@ -41,7 +41,13 @@ import { formatTherapistName, isDateInHoliday, isTherapistOnLeave, generateTimeO
 
 export const SuperAdminPanel: React.FC = () => {
   const { currentUser, updateUserPermissions, open2FASetupModal } = useAuth();
-  const [activeSubTab, setActiveSubTab] = useState<'working_hours' | 'admins'>('working_hours');
+  const [activeSubTab, setActiveSubTab] = useState<'working_hours' | 'admins' | 'sms'>('working_hours');
+  const [smsSettings, setSmsSettings] = useState<SmsSettings | null>(null);
+  const [smsLogs, setSmsLogs] = useState<SmsLog[]>([]);
+  const [testPhone, setTestPhone] = useState('91234567');
+  const [testMessage, setTestMessage] = useState('Test-SMS fra klinikken.');
+  const [testStatus, setTestStatus] = useState<string | null>(null);
+  const [isSendingTest, setIsSendingTest] = useState(false);
   
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [selectedTherapistId, setSelectedTherapistId] = useState<string>('');
@@ -118,10 +124,14 @@ export const SuperAdminPanel: React.FC = () => {
 
     const wh = await dbService.getWorkingHours(targetTherapistId);
     const allHolidays = await dbService.getHolidays();
+    const sms = await dbService.getSmsSettings();
+    const sLogs = await dbService.getSmsLogs();
 
     setUsers(allUsers);
     setWorkingHours(wh);
     setHolidays(allHolidays);
+    setSmsSettings(sms);
+    setSmsLogs(sLogs);
   };
 
   const handleTherapistSelect = async (therapistId: string) => {
@@ -418,6 +428,36 @@ export const SuperAdminPanel: React.FC = () => {
     setTimeout(() => setSaveSuccessMessage(null), 3000);
   };
 
+  const handleSaveSmsSettings = async () => {
+    if (!smsSettings || !currentUser) return;
+    await dbService.saveSmsSettings(smsSettings);
+    setSaveSuccessMessage('Klinikkens SMS-innstillinger er lagret!');
+    setTimeout(() => setSaveSuccessMessage(null), 3000);
+  };
+
+  const handleSendTestSms = async () => {
+    if (!testPhone.trim() || !testMessage.trim()) return;
+    setIsSendingTest(true);
+    setTestStatus('Sender test-SMS med klinikkens avsendernavn...');
+    try {
+      const res = await smsService.sendSms(testPhone.trim(), testMessage.trim(), 'booking');
+      if (res.status === 'sent') {
+        setTestStatus(`✅ SMS sendt vellykket til ${testPhone} fra ${smsSettings?.sender || 'klinikken'}!`);
+      } else if (res.status === 'simulated') {
+        setTestStatus('ℹ️ Simulert SMS sendt');
+      } else {
+        setTestStatus(`❌ Feil: ${res.response || 'SMS feilet'}`);
+      }
+      const logs = await dbService.getSmsLogs();
+      setSmsLogs(logs);
+    } catch (err: any) {
+      setTestStatus(`❌ Feil: ${err.message || 'SMS feilet'}`);
+    } finally {
+      setIsSendingTest(false);
+      setTimeout(() => setTestStatus(null), 8000);
+    }
+  };
+
   const therapistList = users.filter(u => u.role === 'admin' || u.role === 'hovedadmin');
 
   return (
@@ -462,6 +502,16 @@ export const SuperAdminPanel: React.FC = () => {
             <Users className="w-3.5 h-3.5" />
             <span className="sm:hidden">Personell ({therapistList.length})</span>
             <span className="hidden sm:inline">Terapeuter & Administratorer ({therapistList.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('sms')}
+            className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-all flex items-center gap-1.5 flex-shrink-0 ${
+              activeSubTab === 'sms' ? 'bg-sky-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            <span>SMS-innstillinger</span>
           </button>
 
 
@@ -1196,7 +1246,220 @@ export const SuperAdminPanel: React.FC = () => {
         );
       })()}
 
-{/* Modal: Ny ansatt / terapeut */}
+
+      {/* FANE: SMS-INNSTILLINGER FOR DENNE BEDRIFTEN / MENIGHETEN (KUN HOVEDADMIN) */}
+      {activeSubTab === 'sms' && smsSettings && (
+        <div className="bg-white rounded-none sm:rounded-2xl p-3 sm:p-5 border-y sm:border border-slate-200 shadow-xs space-y-4 w-full">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
+            <div>
+              <h2 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <MessageSquare className="w-4 h-4 text-sky-600" />
+                Klinikkens SMS-avsender & Varsler
+              </h2>
+              <p className="text-[11px] text-slate-500">
+                Styr eget avsendernavn, behandlingssted, påminnelsestidspunkter og meldingsmaler for dine klienter.
+              </p>
+            </div>
+            <button
+              onClick={handleSaveSmsSettings}
+              className="px-3.5 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors self-start sm:self-center cursor-pointer"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>Lagre SMS-oppsett</span>
+            </button>
+          </div>
+
+          {/* 1. Avsendernavn og Behandlingssted */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+              <label className="block text-[11px] font-bold text-slate-700 uppercase">
+                Avsendernavn i SMS (Sender ID) *
+              </label>
+              <input
+                type="text"
+                maxLength={11}
+                value={smsSettings.sender || 'Hovden'}
+                onChange={(e) => setSmsSettings({ ...smsSettings, sender: e.target.value })}
+                placeholder="f.eks. Hovden"
+                className="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+              />
+              <p className="text-[10px] text-slate-500 mt-1">
+                Maks 11 tegn (f.eks. Hovden, Betania, Salem). Dette er navnet som står som avsender på klientens telefon.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+              <label className="block text-[11px] font-bold text-slate-700 uppercase">
+                Navn på behandlingssted / Menighet
+              </label>
+              <input
+                type="text"
+                value={smsSettings.treatmentPlace || ''}
+                onChange={(e) => setSmsSettings({ ...smsSettings, treatmentPlace: e.target.value })}
+                placeholder="f.eks. Hovden Terapi"
+                className="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+              />
+              <p className="text-[10px] text-slate-500 mt-1">
+                Erstatter variabelen <code className="font-mono text-sky-700">&#123;behandlingssted&#125;</code> i utsendte meldinger.
+              </p>
+            </div>
+          </div>
+
+          {/* 2. Automatiske påminnelser */}
+          <div className="space-y-2 text-xs pt-1">
+            <span className="block text-[11px] font-bold text-slate-700 uppercase">
+              Automatiske SMS-påminnelser før timen
+            </span>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-[11px] text-slate-800">Påminnelse 1</span>
+                  <input
+                    type="checkbox"
+                    checked={smsSettings.reminder1Enabled}
+                    onChange={(e) => setSmsSettings({ ...smsSettings, reminder1Enabled: e.target.checked })}
+                    className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-600">
+                  <input
+                    type="number"
+                    min={1}
+                    max={168}
+                    value={smsSettings.reminder1Hours}
+                    onChange={(e) => setSmsSettings({ ...smsSettings, reminder1Hours: Number(e.target.value) })}
+                    className="w-14 px-2 py-1 rounded border border-slate-300 font-bold text-center bg-white"
+                  />
+                  <span>timer før avtalen</span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-[11px] text-slate-800">Påminnelse 2 (Kort varsel)</span>
+                  <input
+                    type="checkbox"
+                    checked={smsSettings.reminder2Enabled}
+                    onChange={(e) => setSmsSettings({ ...smsSettings, reminder2Enabled: e.target.checked })}
+                    className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-600">
+                  <input
+                    type="number"
+                    min={1}
+                    max={48}
+                    value={smsSettings.reminder2Hours}
+                    onChange={(e) => setSmsSettings({ ...smsSettings, reminder2Hours: Number(e.target.value) })}
+                    className="w-14 px-2 py-1 rounded border border-slate-300 font-bold text-center bg-white"
+                  />
+                  <span>timer før avtalen</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Meldingsmaler */}
+          <div className="space-y-2 pt-2 border-t border-slate-100 text-xs">
+            <label className="block text-[11px] font-bold text-slate-700 uppercase">
+              Maler for timebekreftelse & påminnelse
+            </label>
+            <div className="p-2 rounded-lg bg-sky-50/60 border border-sky-100 text-[10px] text-sky-800 flex flex-wrap gap-1.5 items-center">
+              <span className="font-bold">Flettefelt:</span>
+              <code className="bg-white px-1.5 py-0.5 rounded border border-sky-200 font-mono">&#123;kunde&#125;</code>
+              <code className="bg-white px-1.5 py-0.5 rounded border border-sky-200 font-mono">&#123;dato&#125;</code>
+              <code className="bg-white px-1.5 py-0.5 rounded border border-sky-200 font-mono">&#123;klokkeslett&#125;</code>
+              <code className="bg-white px-1.5 py-0.5 rounded border border-sky-200 font-mono">&#123;behandlingssted&#125;</code>
+              <code className="bg-white px-1.5 py-0.5 rounded border border-sky-200 font-mono">&#123;behandler&#125;</code>
+              <code className="bg-white px-1.5 py-0.5 rounded border border-sky-200 font-mono">&#123;varighet&#125;</code>
+              <code className="bg-white px-1.5 py-0.5 rounded border border-sky-200 font-mono">&#123;pris&#125;</code>
+            </div>
+
+            <div className="space-y-2">
+              <div>
+                <span className="text-[10px] font-semibold text-slate-600 block mb-0.5">Timebekreftelse:</span>
+                <textarea
+                  rows={2}
+                  value={smsSettings.bookingTemplate}
+                  onChange={(e) => setSmsSettings({ ...smsSettings, bookingTemplate: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border border-slate-300 text-xs font-mono bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+
+              <div>
+                <span className="text-[10px] font-semibold text-slate-600 block mb-0.5">Påminnelse:</span>
+                <textarea
+                  rows={2}
+                  value={smsSettings.reminderTemplate}
+                  onChange={(e) => setSmsSettings({ ...smsSettings, reminderTemplate: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border border-slate-300 text-xs font-mono bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 4. Test-SMS for denne klinikken */}
+          <div className="pt-3 border-t border-slate-100 space-y-2 text-xs">
+            <span className="block text-[11px] font-bold text-slate-700 uppercase">Test utsendelse fra denne klinikken</span>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="tel"
+                value={testPhone}
+                onChange={(e) => setTestPhone(e.target.value)}
+                placeholder="Mobilnummer (f.eks. 91234567)"
+                className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs sm:w-48 font-mono bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+              />
+              <button
+                type="button"
+                onClick={handleSendTestSms}
+                disabled={isSendingTest}
+                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{isSendingTest ? 'Sender...' : 'Send test-melding'}</span>
+              </button>
+            </div>
+            {testStatus && <p className="text-[11px] font-semibold text-slate-700">{testStatus}</p>}
+          </div>
+
+          {/* 5. Siste utsendte SMS for denne klinikken */}
+          <div className="pt-3 border-t border-slate-100 space-y-2 text-xs">
+            <span className="block text-[11px] font-bold text-slate-700 uppercase">Siste utsendte SMS for klinikken ({smsLogs.length})</span>
+            {smsLogs.length === 0 ? (
+              <p className="text-xs text-slate-400">Ingen SMS-meldinger logget ennå.</p>
+            ) : (
+              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                {smsLogs.slice(0, 15).map((log) => (
+                  <div key={log.id} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="space-y-0.5 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-800 font-mono">{log.recipientPhone}</span>
+                        <span className="text-slate-400">({log.type})</span>
+                      </div>
+                      <p className="text-[10px] text-slate-600 truncate max-w-xs sm:max-w-md">{log.message}</p>
+                      {log.status === 'failed' && log.response && (
+                        <p className="text-[10px] text-rose-600 font-medium">{log.response}</p>
+                      )}
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold self-start sm:self-center flex-shrink-0 ${
+                      log.status === 'sent' 
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                        : log.status === 'failed'
+                        ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                        : 'bg-slate-200 text-slate-700'
+                    }`}>
+                      {log.status === 'sent' ? 'Sendt' : log.status === 'failed' ? 'Feilet' : 'Simulert'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Ny ansatt / terapeut */}
       {isNewAdminOpen && (
         <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-t-3xl sm:rounded-3xl p-4 sm:p-7 max-w-lg w-full space-y-4 border border-slate-200 shadow-2xl max-h-[85dvh] sm:max-h-[92vh] overflow-y-auto pb-[calc(1rem+env(safe-area-inset-bottom,0px))] sm:pb-7">

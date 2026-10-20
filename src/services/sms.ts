@@ -114,9 +114,11 @@ export class SmsService {
     toPhone: string,
     message: string,
     type: SmsLog['type'],
-    appointmentId?: string
+    appointmentId?: string,
+    companyId?: string
   ): Promise<SmsLog> {
-    const settings = await dbService.getSmsSettings();
+    const targetCompId = companyId || dbService.getActiveCompanyId();
+    const settings = await dbService.getSmsSettings(targetCompId);
     
     // Rens telefonnummer til kun siffer
     const rawDigits = toPhone.replace(/\D/g, '');
@@ -127,6 +129,7 @@ export class SmsService {
 
     const logEntry: SmsLog = {
       id: 'sms_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+      companyId: targetCompId,
       timestamp: new Date().toISOString(),
       recipientPhone: toPhone,
       message,
@@ -272,9 +275,10 @@ export class SmsService {
       await dbService.logSms(logEntry);
       return logEntry;
     }
-    const settings = await dbService.getSmsSettings();
+    const targetCompId = appointment.companyId || dbService.getActiveCompanyId();
+    const settings = await dbService.getSmsSettings(targetCompId);
     const message = this.formatMessage(settings.bookingTemplate, appointment, undefined, undefined, settings);
-    return await this.sendSms(appointment.clientPhone, message, 'booking', appointment.id);
+    return await this.sendSms(appointment.clientPhone, message, 'booking', appointment.id, targetCompId);
   }
 
   /**
@@ -282,12 +286,13 @@ export class SmsService {
    */
   public async sendReminder(appointment: Appointment, reminderType: 'reminder1' | 'reminder2'): Promise<SmsLog | null> {
     if (!appointment.clientPhone) return null;
-    const settings = await dbService.getSmsSettings();
+    const targetCompId = appointment.companyId || dbService.getActiveCompanyId();
+    const settings = await dbService.getSmsSettings(targetCompId);
     if (reminderType === 'reminder1' && !settings.reminder1Enabled) return null;
     if (reminderType === 'reminder2' && !settings.reminder2Enabled) return null;
 
     const message = this.formatMessage(settings.reminderTemplate, appointment, undefined, undefined, settings);
-    return await this.sendSms(appointment.clientPhone, message, reminderType, appointment.id);
+    return await this.sendSms(appointment.clientPhone, message, reminderType, appointment.id, targetCompId);
   }
 }
 

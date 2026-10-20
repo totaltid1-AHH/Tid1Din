@@ -219,6 +219,12 @@ export const SuperAdminCompaniesView: React.FC = () => {
 
       await dbService.saveCompany(companyData);
 
+      // Synkroniser bedriftens SMS-avsendernavn og behandlingssted til bedriftens SMS-innstillinger
+      const compSms = await dbService.getSmsSettings(companyId);
+      compSms.sender = cleanTreatmentPlace;
+      compSms.treatmentPlace = cleanTreatmentPlace;
+      await dbService.saveSmsSettings(compSms, companyId);
+
       if (currentUser) {
         await dbService.logAction(
           { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },

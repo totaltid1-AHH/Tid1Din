@@ -998,18 +998,46 @@ class DatabaseService {
   }
 
   // --- SMS-INNSTILLINGER & LOGGER ---
+  public getGlobalSmsApiKey(): string {
+    const fromStorage = this.getLocal<string>('global_gatewayapi_key', '');
+    if (fromStorage) return fromStorage;
+    const hovden = this.getLocal<SmsSettings>('sms_settings_comp_hovden', null as any);
+    if (hovden?.apiKey) return hovden.apiKey;
+    return import.meta.env.VITE_GATEWAY_API_KEY || '';
+  }
+
+  public async setGlobalSmsApiKey(apiKey: string): Promise<void> {
+    const cleanKey = apiKey.trim();
+    this.setLocal('global_gatewayapi_key', cleanKey);
+    const hovden = await this.getSmsSettings('comp_hovden');
+    hovden.apiKey = cleanKey;
+    await this.saveSmsSettings(hovden, 'comp_hovden');
+
+    if (isFirebaseConfigured && db) {
+      try {
+        await setDoc(doc(db, 'systemConfig', 'global_sms'), { apiKey: cleanKey, updatedAt: new Date().toISOString() });
+      } catch (e) {
+        console.warn('Kunne ikke lagre global API-nøkkel til Firestore:', e);
+      }
+    }
+  }
+
   public getSmsSettingsSync(companyId?: string): SmsSettings {
     const target = companyId || this.getActiveCompanyId();
-    return this.getLocal<SmsSettings>(`sms_settings_${target}`, {
+    const globalKey = this.getGlobalSmsApiKey();
+    const res = this.getLocal<SmsSettings>(`sms_settings_${target}`, {
       ...DEFAULT_SMS_SETTINGS,
       id: target,
       companyId: target
     });
+    if (!res.apiKey) res.apiKey = globalKey;
+    return res;
   }
 
   public async getSmsSettings(companyId?: string): Promise<SmsSettings> {
     const target = companyId || this.getActiveCompanyId();
     const storageKey = `sms_settings_${target}`;
+    const globalKey = this.getGlobalSmsApiKey();
 
     if (isFirebaseConfigured && db) {
       try {
@@ -1022,6 +1050,10 @@ class DatabaseService {
             const comp = await this.getCompanyById(target);
             settings.treatmentPlace = comp?.treatmentPlace || settings.sender || 'Hovden';
             changed = true;
+          }
+
+          if (!settings.apiKey && globalKey) {
+            settings.apiKey = globalKey;
           }
 
           if (settings.bookingTemplate && settings.bookingTemplate.includes('{avbestillingslenke}')) {
@@ -1047,6 +1079,7 @@ class DatabaseService {
             ...DEFAULT_SMS_SETTINGS,
             id: target,
             companyId: target,
+            apiKey: globalKey || DEFAULT_SMS_SETTINGS.apiKey,
             sender: comp?.treatmentPlace || DEFAULT_SMS_SETTINGS.sender,
             treatmentPlace: comp?.treatmentPlace || comp?.name || 'Hovden'
           };
@@ -1058,7 +1091,9 @@ class DatabaseService {
         console.warn('Firebase error fetching SMS settings:', e);
       }
     }
-    return this.getLocal<SmsSettings>(storageKey, DEFAULT_SMS_SETTINGS);
+    const local = this.getLocal<SmsSettings>(storageKey, DEFAULT_SMS_SETTINGS);
+    if (!local.apiKey && globalKey) local.apiKey = globalKey;
+    return local;
   }
 
   public async saveSmsSettings(settings: SmsSettings, companyId?: string): Promise<void> {
