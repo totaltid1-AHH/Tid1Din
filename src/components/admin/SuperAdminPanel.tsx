@@ -1289,6 +1289,18 @@ export const SuperAdminPanel: React.FC = () => {
               </div>
             </div>
 
+            {/* Advarsel om GatewayAPI Link-Check / URL-hvitelisting */}
+            <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-xs text-amber-900 flex items-start gap-2.5">
+              <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <span className="font-bold block">Viktig om lenker i SMS (GatewayAPI URL Whitelist):</span>
+                <p className="text-[11px] leading-relaxed text-amber-800">
+                  GatewayAPI og teleoperatører blokkerer SMS som inneholder internettlenker dersom domenet ikke er forhåndsgodkjent under <strong>GatewayAPI.com &gt; SMS &gt; URL Whitelist</strong> (feil: <em>contained non-allowed-links</em>).<br />
+                  For 100 % leveringssikkerhet og lavest SMS-kostnad anbefales det å <strong>ikke bruke web-lenker i SMS-malene</strong>.
+                </p>
+              </div>
+            </div>
+
             {/* Meldingsmaler */}
             <div className="space-y-2 pt-2 border-t border-slate-100">
               <label className="block text-[11px] font-bold text-slate-700 uppercase">

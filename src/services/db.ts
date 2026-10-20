@@ -59,8 +59,8 @@ const DEFAULT_SMS_SETTINGS: SmsSettings = {
   reminder1Hours: 24,
   reminder2Enabled: true,
   reminder2Hours: 1,
-  bookingTemplate: 'Hei {kunde}! Din time hos Tid1Din er bekreftet: {dato} kl. {klokkeslett} ({varighet} min, kr {pris}). Avbestilling: {avbestillingslenke}',
-  reminderTemplate: 'Påminnelse fra Tid1Din: Du har time {dato} kl. {klokkeslett}. {motelenke} Velkommen!'
+  bookingTemplate: 'Hei {kunde}! Din time hos Tid1Din er bekreftet: {dato} kl. {klokkeslett} ({varighet} min, kr {pris}). Avbestilling må skje senest 24t før. Velkommen!',
+  reminderTemplate: 'Påminnelse fra Tid1Din: Du har time {dato} kl. {klokkeslett}. Velkommen!'
 };
 
 export const DEFAULT_SMS_TEMPLATES: SmsTemplate[] = [
@@ -775,6 +775,21 @@ class DatabaseService {
         const snap = await getDoc(doc(db, 'smsSettings', 'default'));
         if (snap.exists()) {
           const settings = snap.data() as SmsSettings;
+          let changed = false;
+          // Fjern automatisk {avbestillingslenke} dersom den finnes, da GatewayAPI blokkerer ikke-hvitelistede lenker
+          if (settings.bookingTemplate && settings.bookingTemplate.includes('{avbestillingslenke}')) {
+            settings.bookingTemplate = settings.bookingTemplate
+              .replace(/\s*Avbestilling:\s*\{avbestillingslenke\}/g, ' Avbestilling må skje senest 24t før. Velkommen!')
+              .replace(/\{avbestillingslenke\}/g, '');
+            changed = true;
+          }
+          if (settings.reminderTemplate && settings.reminderTemplate.includes('{motelenke}')) {
+            settings.reminderTemplate = settings.reminderTemplate.replace(/\s*\{motelenke\}/g, '');
+            changed = true;
+          }
+          if (changed) {
+            await this.saveSmsSettings(settings);
+          }
           this.setLocal('sms_settings', settings);
           return settings;
         } else {

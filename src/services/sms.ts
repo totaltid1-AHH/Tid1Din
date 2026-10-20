@@ -214,7 +214,11 @@ export class SmsService {
         } else if (status === 402) {
           errorMsg = 'Feil 402: Kontoen mangler SMS-kreditter. Fyll på saldo hos GatewayAPI.com.';
         } else if (status === 422) {
-          errorMsg = `Feil 422 (Ugyldig data): ${errorMsg}`;
+          if (String(errorMsg).includes('non-allowed-links')) {
+            errorMsg = 'GatewayAPI Link-Check: Meldingen inneholder en nettlenke som ikke er forhåndsgodkjent under GatewayAPI.com > SMS > URL Whitelist. Fjern lenken fra SMS-malen for umiddelbar levering.';
+          } else {
+            errorMsg = `Feil 422 (Ugyldig data): ${errorMsg}`;
+          }
         }
 
         logEntry.response = errorMsg;
