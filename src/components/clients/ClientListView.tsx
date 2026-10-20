@@ -714,6 +714,9 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
           }}
           client={smsModalClient}
           initialTab="delay"
+          onAppointmentUpdated={() => {
+            loadClients();
+          }}
         />
       )}
 

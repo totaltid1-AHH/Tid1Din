@@ -57,7 +57,7 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
   // 1. Forsinkelse
   const [delayMinutes, setDelayMinutes] = useState<number>(15);
   const [delayMessage, setDelayMessage] = useState('');
-  const [updateCalendarTimeOnDelay, setUpdateCalendarTimeOnDelay] = useState(false);
+  const [updateCalendarTimeOnDelay, setUpdateCalendarTimeOnDelay] = useState(true);
 
   // 2. Ombooking
   const [newDate, setNewDate] = useState('');
@@ -124,6 +124,7 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
     } as Appointment);
 
     // Initialiser forsinkelse
+    setUpdateCalendarTimeOnDelay(true);
     initDelayMessage(baseApt, 15, tpls);
 
     // Initialiser ombooking
@@ -222,7 +223,7 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
     setCustomMessage(formatted);
   };
 
-  // 1. Send forsinkelses-SMS
+  // 1. Send forsinkelses-SMS med automatisk oppdatering av kalenderen
   const handleSendDelaySms = async () => {
     if (!recipientPhone) {
       alert('Vennligst oppgi et gyldig mobilnummer til klienten.');
@@ -230,37 +231,67 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
     }
     setIsSending(true);
     try {
-      // Hvis behandleren ønsker å oppdatere kalendertiden
-      if (updateCalendarTimeOnDelay && selectedAppointment) {
-        const newStart = calculateNewTimeFromDelay(selectedAppointment.startTime, delayMinutes);
-        const [h, m] = newStart.split(':').map(Number);
-        const endTotal = h * 60 + m + selectedAppointment.durationMinutes;
-        const newEnd = `${String(Math.floor(endTotal / 60) % 24).padStart(2, '0')}:${String(endTotal % 60).padStart(2, '0')}`;
+      let updatedApt: Appointment | null = null;
+      let newStart = '';
+      let newEnd = '';
 
-        const updated: Appointment = {
+      // Kalenderen og timeoppføringen oppdateres samtidig
+      if (updateCalendarTimeOnDelay && selectedAppointment && selectedAppointment.id !== 'temp') {
+        newStart = calculateNewTimeFromDelay(selectedAppointment.startTime, delayMinutes);
+        const [h, m] = newStart.split(':').map(Number);
+        const dur = selectedAppointment.durationMinutes || 45;
+        const endTotal = h * 60 + m + dur;
+        newEnd = `${String(Math.floor(endTotal / 60) % 24).padStart(2, '0')}:${String(endTotal % 60).padStart(2, '0')}`;
+
+        updatedApt = {
           ...selectedAppointment,
+          clientPhone: recipientPhone || selectedAppointment.clientPhone,
           startTime: newStart,
           endTime: newEnd,
           updatedAt: new Date().toISOString()
         };
-        await dbService.saveAppointment(updated);
-        setSelectedAppointment(updated);
-        onAppointmentUpdated?.(updated);
+        await dbService.saveAppointment(updatedApt);
+        setSelectedAppointment(updatedApt);
+        onAppointmentUpdated?.(updatedApt);
+
+        if (currentUser) {
+          await dbService.logAction(
+            { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
+            'update_appointment',
+            `Forskyvet time for ${selectedAppointment.clientName} med ${delayMinutes} minutter til kl. ${newStart}–${newEnd}`
+          );
+        }
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('dintid_data_updated', { detail: { type: 'appointments' } }));
+        }
       }
 
       const log = await smsService.sendSms(recipientPhone, delayMessage, 'delay', selectedAppointment?.id);
+
+      const calendarFeedback = updatedApt
+        ? `Timen er flyttet i kalenderen til kl. ${newStart}–${newEnd}. `
+        : '';
+
+      const smsFeedback = log.status === 'sent'
+        ? `Forsinkelses-SMS sendt til ${recipientPhone}!`
+        : log.status === 'simulated'
+        ? `Forsinkelses-SMS simulert til ${recipientPhone}.`
+        : `⚠️ SMS feilet: ${log.response || 'Kunne ikke levere SMS'}`;
+
       setFeedback({
-        type: 'success',
-        message: log.status === 'sent' 
-          ? `SMS sendt til ${recipientPhone} via GatewayAPI!` 
-          : `SMS simulert og loggført til ${recipientPhone}.`
+        type: log.status === 'failed' ? 'error' : 'success',
+        message: `${calendarFeedback}${smsFeedback}`
       });
-      setTimeout(() => {
-        setFeedback(null);
-        onClose();
-      }, 2000);
+
+      if (log.status !== 'failed') {
+        setTimeout(() => {
+          setFeedback(null);
+          onClose();
+        }, 2200);
+      }
     } catch (err: any) {
-      setFeedback({ type: 'error', message: 'Kunne ikke sende SMS: ' + err.message });
+      setFeedback({ type: 'error', message: 'Kunne ikke gjennomføre forsinkelse: ' + err.message });
     } finally {
       setIsSending(false);
     }
@@ -619,21 +650,24 @@ export const AppointmentSmsModal: React.FC<AppointmentSmsModalProps> = ({
               </div>
 
               {selectedAppointment && (
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-bold text-slate-800">Juster kalenderens starttid</p>
-                    <p className="text-[11px] text-slate-500">
-                      Flytter avtalen i kalenderen fra {selectedAppointment.startTime} til {calculatedNewDelayTime}.
+                <div className="p-3 bg-sky-50/70 rounded-xl border border-sky-200 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-sky-600" />
+                      Oppdater timeoppføringen i kalenderen automatisk
+                    </p>
+                    <p className="text-[11px] text-slate-600">
+                      Flytter avtalen i kalenderen fra kl. <span className="font-mono font-bold">{selectedAppointment.startTime}</span> til kl. <span className="font-mono font-bold text-sky-900">{calculatedNewDelayTime}</span> (+{delayMinutes} min forsinkelse).
                     </p>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
+                  <label className="relative inline-flex items-center cursor-pointer ml-3 flex-shrink-0">
                     <input
                       type="checkbox"
                       checked={updateCalendarTimeOnDelay}
                       onChange={(e) => setUpdateCalendarTimeOnDelay(e.target.checked)}
                       className="sr-only peer"
                     />
-                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-600"></div>
+                    <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-600"></div>
                   </label>
                 </div>
               )}

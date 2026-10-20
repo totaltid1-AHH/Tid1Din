@@ -40,6 +40,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { dbService } from '../../services/db';
 import { smsService } from '../../services/sms';
+import { AppointmentSmsModal } from '../appointments/AppointmentSmsModal';
 import { 
   Appointment, 
   WorkingHoursConfig, 
@@ -104,6 +105,8 @@ export const CalendarView: React.FC = () => {
   const [bookingSuccessMessage, setBookingSuccessMessage] = useState<string | null>(null);
   const [editingAppointmentId, setEditingAppointmentId] = useState<string | null>(null);
   const [cancellingAptId, setCancellingAptId] = useState<string | null>(null);
+  const [delayModalApt, setDelayModalApt] = useState<Appointment | null>(null);
+  const [isDelayModalOpen, setIsDelayModalOpen] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -400,6 +403,11 @@ export const CalendarView: React.FC = () => {
       setBookingClientPhone(currentUser?.phone || '');
     }
     setIsDaySlotsModalOpen(true);
+  };
+
+  const handleOpenDelayModal = (apt: Appointment) => {
+    setDelayModalApt(apt);
+    setIsDelayModalOpen(true);
   };
 
   const handleStartEditAppointment = (apt: Appointment) => {
@@ -1163,6 +1171,22 @@ export const CalendarView: React.FC = () => {
         </div>
       </div>
 
+      {/* Modal for forsinkelse / utsatt time og SMS */}
+      {isDelayModalOpen && delayModalApt && (
+        <AppointmentSmsModal
+          isOpen={isDelayModalOpen}
+          onClose={() => {
+            setIsDelayModalOpen(false);
+            setDelayModalApt(null);
+          }}
+          appointment={delayModalApt}
+          initialTab="delay"
+          onAppointmentUpdated={() => {
+            loadData();
+          }}
+        />
+      )}
+
       {/* POPUP-VINDU (MODAL): DAGENS AVTALER OG BESTILLING AV TIME */}
       {isDaySlotsModalOpen && (
         <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
@@ -1274,6 +1298,18 @@ export const CalendarView: React.FC = () => {
                                   </span>
                                 ) : (
                                   <>
+                                    {currentUser?.role !== 'client' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenDelayModal(apt)}
+                                        className="px-2 py-1 rounded-lg text-[11px] font-semibold border bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200 flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                                        title="Varsle forsinkelse (utsatt time) og oppdater kalenderen automatisk"
+                                      >
+                                        <Clock className="w-3 h-3 text-amber-600" />
+                                        <span>Utsatt</span>
+                                      </button>
+                                    )}
+
                                     <button
                                       type="button"
                                       onClick={() => isEditingThis ? handleCancelEditAppointment() : handleStartEditAppointment(apt)}

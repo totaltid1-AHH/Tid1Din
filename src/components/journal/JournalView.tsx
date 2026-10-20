@@ -2160,6 +2160,9 @@ export const JournalView: React.FC<JournalViewProps> = ({
           onClose={() => setIsSmsModalOpen(false)}
           client={selectedClient}
           initialTab="delay"
+          onAppointmentUpdated={() => {
+            if (selectedClient) loadJournalsAndAppointments(selectedClient.uid);
+          }}
         />
       )}
 
