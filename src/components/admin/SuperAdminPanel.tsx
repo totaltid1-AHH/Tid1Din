@@ -1247,7 +1247,7 @@ export const SuperAdminPanel: React.FC = () => {
       })()}
 
 
-      {/* FANE: SMS-INNSTILLINGER FOR DENNE BEDRIFTEN / MENIGHETEN (KUN HOVEDADMIN) */}
+      {/* FANE: SMS-INNSTILLINGER FOR DENNE BEDRIFTEN (KUN HOVEDADMIN) */}
       {activeSubTab === 'sms' && smsSettings && (
         <div className="bg-white rounded-none sm:rounded-2xl p-3 sm:p-5 border-y sm:border border-slate-200 shadow-xs space-y-4 w-full">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
@@ -1284,13 +1284,13 @@ export const SuperAdminPanel: React.FC = () => {
                 className="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
               />
               <p className="text-[10px] text-slate-500 mt-1">
-                Maks 11 tegn (f.eks. Hovden, Betania, Salem). Dette er navnet som står som avsender på klientens telefon.
+                Maks 11 tegn.
               </p>
             </div>
 
             <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
               <label className="block text-[11px] font-bold text-slate-700 uppercase">
-                Navn på behandlingssted / Menighet
+                Navn på behandlingssted
               </label>
               <input
                 type="text"
