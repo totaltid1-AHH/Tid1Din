@@ -79,7 +79,7 @@ const AppContent: React.FC = () => {
         <TwoFactorModal />
         <LoginView />
         <footer className="py-3 text-center text-xs text-slate-400 border-t border-slate-200">
-          Tid1Din &bull; Sikker flerbedriftsapp for kundeoppfølging & booking
+          Tid1Din
         </footer>
       </div>
     );

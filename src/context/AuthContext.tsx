@@ -261,8 +261,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
-    // Passord-sjekk: hopp over hvis ingen passord er satt (bakoverkompatibilitet) eller ved demo-hurtigvalg
-    if (user.password && password !== undefined && user.password !== password) {
+    // Sjekk om brukerkontoen er aktiv
+    if (user.isActive === false) {
+      return { 
+        success: false, 
+        requires2FA: false, 
+        error: 'Denne brukerkontoen er deaktivert. Kontakt klinikkadministrator.' 
+      };
+    }
+
+    // Passord-sjekk: krev gyldig passord
+    if (user.password && (password === undefined || user.password !== password)) {
       return { success: false, requires2FA: false, error: 'Feil brukernavn/e-post eller passord' };
     }
 

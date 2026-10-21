@@ -11,7 +11,7 @@ import {
 import { ResetPasswordModal } from './ResetPasswordModal';
 
 export const LoginView: React.FC = () => {
-  const { login, loginWithGoogle, registerClient } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -19,14 +19,6 @@ export const LoginView: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
-
-  // Registrering modal
-  const [isRegisterOpen, setIsRegisterOpen] = useState(false);
-  const [regName, setRegName] = useState('');
-  const [regEmail, setRegEmail] = useState('');
-  const [regPhone, setRegPhone] = useState('');
-  const [regAddress, setRegAddress] = useState('');
-  const [regBirthDate, setRegBirthDate] = useState('');
 
   const handleGoogleLogin = async () => {
     setIsGoogleLoading(true);
@@ -60,42 +52,6 @@ export const LoginView: React.FC = () => {
     }
   };
 
-  const handleQuickDemoLogin = async (demoEmail: string) => {
-    setIsLoading(true);
-    setError('');
-    const res = await login(demoEmail);
-    setIsLoading(false);
-    if (!res.success) {
-      setError(res.error || 'Feil ved demo-innlogging');
-    }
-  };
-
-  const handleRegisterClient = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!regName || !regEmail) {
-      setError('Navn og e-post er påkrevd.');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const newClient = await registerClient({
-        displayName: regName,
-        email: regEmail,
-        phone: regPhone,
-        address: regAddress,
-        birthDate: regBirthDate
-      });
-
-      setIsRegisterOpen(false);
-      await login(newClient.email);
-    } catch (e: any) {
-      setError(e.message || 'Kunne ikke registrere klient');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-[85vh] flex items-center justify-center p-4 sm:p-6">
       <div className="w-full max-w-md space-y-6">
@@ -108,9 +64,6 @@ export const LoginView: React.FC = () => {
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
             Tid1Din
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500">
-            Sikkert kundeoppfølgings- og bookingsystem
-          </p>
         </div>
 
         {/* Innloggingskort */}
@@ -160,14 +113,11 @@ export const LoginView: React.FC = () => {
               </svg>
               <span>{isGoogleLoading ? 'Kobler til Google...' : 'Logg inn med Google (Super-admin)'}</span>
             </button>
-            <p className="text-[11px] text-center text-slate-400">
-              Forhåndsgodkjent: <strong className="text-slate-600 font-semibold">total.tid1@gmail.com</strong>
-            </p>
           </div>
 
           <div className="relative flex items-center justify-center my-2">
             <div className="border-t border-slate-200 w-full" />
-            <span className="bg-white px-3 text-[10px] text-slate-400 uppercase font-bold tracking-wider">eller klinikkbruker</span>
+            <span className="bg-white px-3 text-[10px] text-slate-400 uppercase font-bold tracking-wider">eller</span>
             <div className="border-t border-slate-200 w-full" />
           </div>
 
@@ -229,150 +179,9 @@ export const LoginView: React.FC = () => {
             </button>
           </form>
 
-          {/* Hurtig-demo innlogging */}
-          <div className="pt-4 border-t border-slate-100 space-y-2.5">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              Demo-brukere (passord: demo1234)
-            </span>
-
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => handleQuickDemoLogin('total.tid1@gmail.com')}
-                className="p-2.5 rounded-xl border border-indigo-200 hover:border-indigo-400 bg-indigo-50/40 hover:bg-indigo-50 text-left transition-colors"
-              >
-                <p className="font-bold text-slate-900 truncate">Total – Super-admin</p>
-                <p className="text-[10px] text-indigo-700 font-semibold">Google / Flerbedrift</p>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickDemoLogin('hovedadmin@dintid.no')}
-                className="p-2.5 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/50 text-left transition-colors"
-              >
-                <p className="font-bold text-slate-800 truncate">Kari – Hovedadmin</p>
-                <p className="text-[10px] text-indigo-600">Hovden · Full tilgang</p>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickDemoLogin('admin.jonas@dintid.no')}
-                className="p-2.5 rounded-xl border border-slate-200 hover:border-amber-400 hover:bg-amber-50/50 text-left transition-colors"
-              >
-                <p className="font-bold text-slate-800 truncate">Jonas – Terapeut</p>
-                <p className="text-[10px] text-amber-600">Med innsyn</p>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickDemoLogin('admin.eva@dintid.no')}
-                className="p-2.5 rounded-xl border border-slate-200 hover:border-rose-400 hover:bg-rose-50/50 text-left transition-colors"
-              >
-                <p className="font-bold text-slate-800 truncate">Eva – Vikar</p>
-                <p className="text-[10px] text-rose-600">Skjult navn/tlf</p>
-              </button>
-            </div>
-          </div>
-
-          <div className="pt-2 text-center">
-            <span className="text-[11px] text-slate-400 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg inline-block">
-              Klient-innlogging er satt på pause. Systemet er for terapeuter og klinikk.
-            </span>
-          </div>
-
         </div>
 
       </div>
-
-      {/* REGISTRER NY KLIENT MODAL */}
-      {isRegisterOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full border border-slate-200 shadow-2xl space-y-4">
-            <div>
-              <h3 className="text-xl font-bold text-slate-900">Registrer ny klient</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Du tildeles et kundenummer automatisk.
-              </p>
-            </div>
-
-            <form onSubmit={handleRegisterClient} className="space-y-3.5">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Fullt navn *</label>
-                <input
-                  type="text"
-                  required
-                  value={regName}
-                  onChange={(e) => setRegName(e.target.value)}
-                  placeholder="Kari Tveit"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">E-post *</label>
-                <input
-                  type="email"
-                  required
-                  value={regEmail}
-                  onChange={(e) => setRegEmail(e.target.value)}
-                  placeholder="kari@eksempel.no"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Mobiltelefon</label>
-                <input
-                  type="tel"
-                  value={regPhone}
-                  onChange={(e) => setRegPhone(e.target.value)}
-                  placeholder="98765432"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Adresse</label>
-                  <input
-                    type="text"
-                    value={regAddress}
-                    onChange={(e) => setRegAddress(e.target.value)}
-                    placeholder="Gateveien 2"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Fødselsdato</label>
-                  <input
-                    type="date"
-                    value={regBirthDate}
-                    onChange={(e) => setRegBirthDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsRegisterOpen(false)}
-                  className="w-1/2 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-xs font-semibold"
-                >
-                  Avbryt
-                </button>
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-1/2 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-md shadow-sky-600/20"
-                >
-                  Opprett &amp; Logg inn
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* TILBAKESTILL PASSORD VIA SMS MODAL */}
       <ResetPasswordModal
