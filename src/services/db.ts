@@ -11,7 +11,7 @@ import {
   UserRole,
   Company 
 } from '../types';
-import { encryptData, decryptData } from '../utils/crypto';
+import { encryptData, decryptData, hashPassword } from '../utils/crypto';
 import { db, isFirebaseConfigured } from '../config/firebase';
 import { 
   collection, 
@@ -652,6 +652,15 @@ class DatabaseService {
       user.companyId = this.getActiveCompanyId();
     }
 
+    // Hash passord med PBKDF2 dersom det er oppgitt i klartekst
+    if (user.password && !user.password.startsWith('PBKDF2:')) {
+      try {
+        user.password = await hashPassword(user.password);
+      } catch (e) {
+        console.warn('Kunne ikke hashe passord, beholder verdi:', e);
+      }
+    }
+
     const cleanUser = cleanForFirestore(user);
     const users = [...this.getCachedAllUsers()];
     const index = users.findIndex(u => u.uid === user.uid);
@@ -845,18 +854,29 @@ class DatabaseService {
     const fetchPromise = (async () => {
       if (isFirebaseConfigured && db) {
         try {
-          const snap = await getDocs(collection(db, 'appointments'));
+          const appointmentsQuery = filterCompanyId === 'all'
+            ? collection(db, 'appointments')
+            : query(collection(db, 'appointments'), where('companyId', '==', target));
+
+          const snap = await getDocs(appointmentsQuery);
           if (!snap.empty) {
             const apts = snap.docs.map(d => ({ ...d.data(), id: d.id } as Appointment));
-            const hasChanged = JSON.stringify(apts) !== JSON.stringify(this.memoryAppointments);
-            this.memoryAppointments = apts;
+            const existingAll = this.getLocal<Appointment[]>('appointments', []);
+            let merged = [...existingAll];
+            if (filterCompanyId === 'all') {
+              merged = apts;
+            } else {
+              merged = merged.filter(a => a.companyId !== target).concat(apts);
+            }
+            const hasChanged = JSON.stringify(merged) !== JSON.stringify(this.memoryAppointments);
+            this.memoryAppointments = merged;
             this.memoryAppointmentsTime = Date.now();
-            this.setLocal('appointments', apts);
+            this.setLocal('appointments', merged);
             if (hasChanged) {
               this.notifyDataUpdated('appointments');
             }
-            if (filterCompanyId === 'all') return apts;
-            return apts.filter(a => a.companyId === target || (!a.companyId && target === 'comp_hovden'));
+            if (filterCompanyId === 'all') return merged;
+            return merged.filter(a => a.companyId === target || (!a.companyId && target === 'comp_hovden'));
           } else if (cached.length > 0) {
             for (const apt of cached) {
               await setDoc(doc(db, 'appointments', apt.id), cleanForFirestore(apt));
@@ -880,7 +900,22 @@ class DatabaseService {
   }
 
   public async getAppointmentsByClient(clientId: string): Promise<Appointment[]> {
-    const all = await this.getAppointments('all');
+    if (isFirebaseConfigured && db) {
+      try {
+        const q = query(collection(db, 'appointments'), where('clientId', '==', clientId));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const apts = snap.docs.map(d => ({ ...d.data(), id: d.id } as Appointment));
+          const existing = this.getLocal<Appointment[]>('appointments', []);
+          const merged = existing.filter(a => a.clientId !== clientId).concat(apts);
+          this.setLocal('appointments', merged);
+          return apts;
+        }
+      } catch (e) {
+        console.warn('Firebase error fetching client appointments:', e);
+      }
+    }
+    const all = this.getCachedAppointments('all');
     return all.filter(a => a.clientId === clientId);
   }
 
@@ -938,19 +973,17 @@ class DatabaseService {
   public async getJournalsForClient(clientId: string): Promise<JournalEntry[]> {
     if (isFirebaseConfigured && db) {
       try {
-        const snap = await getDocs(collection(db, 'journals'));
+        const q = query(collection(db, 'journals'), where('clientId', '==', clientId));
+        const snap = await getDocs(q);
         if (!snap.empty) {
-          const allJournals = snap.docs.map(d => d.data() as JournalEntry);
-          this.setLocal('journals', allJournals);
-          return allJournals.filter(j => j.clientId === clientId);
+          const clientJournals = snap.docs.map(d => ({ ...d.data(), id: d.id } as JournalEntry));
+          const allCached = this.getLocal<JournalEntry[]>('journals', []);
+          const others = allCached.filter(j => j.clientId !== clientId);
+          this.setLocal('journals', [...others, ...clientJournals]);
+          return clientJournals;
         } else {
           const localJournals = this.getLocal<JournalEntry[]>('journals', []);
-          if (localJournals.length > 0) {
-            for (const j of localJournals) {
-              await setDoc(doc(db, 'journals', j.id), cleanForFirestore(j));
-            }
-            return localJournals.filter(j => j.clientId === clientId);
-          }
+          return localJournals.filter(j => j.clientId === clientId);
         }
       } catch (e) {
         console.warn('Firebase error fetching journals:', e);

@@ -276,32 +276,28 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ onNavigateToCa
   const handleBookClick = onNavigateToBooking || onNavigateToCalendar;
 
   return (
-    <div className="space-y-3 sm:space-y-6 w-full">
-      
-      {/* Velkomstbanner - full bredde på mobil */}
-      <div className="bg-gradient-to-r from-sky-700 via-sky-600 to-cyan-600 rounded-none sm:rounded-3xl p-4 sm:p-7 text-white shadow-sm w-full">
+    <div className="space-y-4 w-full">
+      {/* Velkomstbanner */}
+      <div className="bg-[#0f172a] rounded-xl p-5 sm:p-6 text-white shadow-2xs w-full">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-lg sm:text-2xl font-bold tracking-tight">
-              Hei, {currentUser?.displayName}!
+            <h1 className="text-lg sm:text-xl font-bold tracking-tight">
+              Hei, {currentUser?.displayName}
             </h1>
-            <p className="text-xs sm:text-sm text-sky-100 mt-0.5">
-              Velkommen til din pasientoversikt hos Tid1Din.
-            </p>
           </div>
 
           <button
             onClick={handleBookClick}
-            className="px-3.5 py-2 rounded-xl bg-white text-sky-700 font-bold text-xs shadow-sm hover:bg-sky-50 transition-all flex items-center gap-1.5 flex-shrink-0 cursor-pointer"
+            className="px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-medium text-xs shadow-xs transition-colors flex items-center gap-1.5 flex-shrink-0 cursor-pointer"
           >
-            <Plus className="w-4 h-4" />
-            Bestill time
+            <Plus className="w-3.5 h-3.5" />
+            <span>Bestill time</span>
           </button>
         </div>
       </div>
 
       {feedbackMessage && (
-        <div className="mx-2 sm:mx-0 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between">
+        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
             <span>{feedbackMessage}</span>
@@ -312,15 +308,15 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ onNavigateToCa
         </div>
       )}
 
-      {/* Neste Time Kort - Full bredde */}
+      {/* Neste Time Kort */}
       {nextAppointment ? (
-        <div className="bg-white rounded-none sm:rounded-3xl p-4 sm:p-6 border-y sm:border border-slate-200 shadow-xs w-full">
+        <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200/80 shadow-2xs w-full">
           <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-sky-700">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              Din neste time
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900">
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span>Neste time</span>
             </div>
-            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+            <span className="text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-md">
               Bekreftet
             </span>
           </div>

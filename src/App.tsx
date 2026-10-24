@@ -24,7 +24,8 @@ import {
   Users, 
   Settings, 
   BookOpen,
-  Building2
+  Building2,
+  Clock
 } from 'lucide-react';
 
 const AppContent: React.FC = () => {
@@ -65,10 +66,7 @@ const AppContent: React.FC = () => {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center space-y-3">
-          <div className="w-12 h-12 border-4 border-sky-600 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Laster Tid1Din...</p>
-        </div>
+        <div className="w-8 h-8 border-2 border-sky-600 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -78,9 +76,6 @@ const AppContent: React.FC = () => {
       <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
         <TwoFactorModal />
         <LoginView />
-        <footer className="py-3 text-center text-xs text-slate-400 border-t border-slate-200">
-          Tid1Din
-        </footer>
       </div>
     );
   }
@@ -199,84 +194,76 @@ const AppContent: React.FC = () => {
       {/* Bunn-navigasjon på mobil for bedriftsbrukere (skjult for super-admin) */}
       {currentUser.role !== 'superadmin' && (
         <nav
-          className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-2xl flex items-center justify-around px-1 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] w-full max-w-full"
-          style={{ transform: 'translateZ(0)', WebkitTransform: 'translateZ(0)' }}
+          className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-slate-200/80 flex items-center justify-around px-2 pt-1.5 pb-[calc(0.4rem+env(safe-area-inset-bottom,0px))] w-full"
         >
           <button
             onClick={() => handleNavTab('dashboard')}
-            className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
-              currentTab === 'dashboard' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+            className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
+              currentTab === 'dashboard' ? 'text-sky-600 font-semibold' : 'text-slate-400 hover:text-slate-700'
             }`}
           >
-            <LayoutDashboard className="w-5 h-5 mb-0.5 flex-shrink-0" />
-            <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Oversikt</span>
+            <LayoutDashboard className="w-4.5 h-4.5 mb-0.5" />
+            <span className="text-[10px]">Oversikt</span>
           </button>
 
           <button
             onClick={() => handleNavTab('calendar')}
-            className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
-              currentTab === 'calendar' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+            className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
+              currentTab === 'calendar' ? 'text-sky-600 font-semibold' : 'text-slate-400 hover:text-slate-700'
             }`}
           >
-            <CalendarIcon className="w-5 h-5 mb-0.5 flex-shrink-0" />
-            <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Kalender</span>
+            <CalendarIcon className="w-4.5 h-4.5 mb-0.5" />
+            <span className="text-[10px]">Kalender</span>
           </button>
+
+          {currentUser.role === 'client' && (
+            <button
+              onClick={() => handleNavTab('booking')}
+              className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
+                currentTab === 'booking' ? 'text-sky-600 font-semibold' : 'text-slate-400 hover:text-slate-700'
+              }`}
+            >
+              <Clock className="w-4.5 h-4.5 mb-0.5" />
+              <span className="text-[10px]">Bestill</span>
+            </button>
+          )}
 
           {isStaffOrAdmin && (
             <button
               onClick={() => handleNavTab('journal')}
-              className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
-                currentTab === 'journal' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+              className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
+                currentTab === 'journal' ? 'text-sky-600 font-semibold' : 'text-slate-400 hover:text-slate-700'
               }`}
             >
-              <BookOpen className="w-5 h-5 mb-0.5 flex-shrink-0" />
-              <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Journal</span>
+              <BookOpen className="w-4.5 h-4.5 mb-0.5" />
+              <span className="text-[10px]">Journal</span>
             </button>
           )}
 
           {isStaffOrAdmin && (
             <button
               onClick={() => handleNavTab('clients')}
-              className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
-                currentTab === 'clients' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+              className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
+                currentTab === 'clients' ? 'text-sky-600 font-semibold' : 'text-slate-400 hover:text-slate-700'
               }`}
             >
-              <Users className="w-5 h-5 mb-0.5 flex-shrink-0" />
-              <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Klienter</span>
+              <Users className="w-4.5 h-4.5 mb-0.5" />
+              <span className="text-[10px]">Klienter</span>
             </button>
           )}
 
           {isStaffOrAdmin && (
             <button
               onClick={() => handleNavTab('admin_settings')}
-              className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
-                currentTab === 'admin_settings' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+              className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
+                currentTab === 'admin_settings' ? 'text-sky-600 font-semibold' : 'text-slate-400 hover:text-slate-700'
               }`}
             >
-              <Settings className="w-5 h-5 mb-0.5 flex-shrink-0" />
-              <span className="text-[11px] font-medium truncate w-full text-center block leading-tight">Klinikk</span>
+              <Settings className="w-4.5 h-4.5 mb-0.5" />
+              <span className="text-[10px]">Klinikk</span>
             </button>
           )}
         </nav>
-      )}
-
-      {/* Skjult på mobil og ved Journal-fane for å frigjøre maksimal skjermplass */}
-      {!isJournalTab && (
-        <footer className="hidden sm:block border-t border-slate-200 bg-white py-4 mt-8">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between text-xs text-slate-500">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-700">Tid1Din</span>
-              <span>&bull;</span>
-              <span className="flex items-center gap-1 text-emerald-700 font-medium">
-                <Lock className="w-3.5 h-3.5 text-emerald-600" />
-                End-to-End Sikret
-              </span>
-            </div>
-            <p className="text-slate-400">
-              Sikkert flerbedrifts kundeoppfølgings- og bookingsystem
-            </p>
-          </div>
-        </footer>
       )}
     </div>
   );

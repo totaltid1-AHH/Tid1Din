@@ -188,47 +188,45 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
   });
 
   return (
-    <div className="space-y-2.5 sm:space-y-5 w-full">
-      
+    <div className="space-y-4 w-full">
       {/* Header */}
-      <div className="bg-white p-3 sm:p-5 rounded-none sm:rounded-2xl border-y sm:border border-slate-200 shadow-xs flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap w-full">
-        <div>
-          <h1 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-1.5">
-            <Users className="w-5 h-5 text-sky-600" />
-            Klienter
-          </h1>
-        </div>
+      <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/80 shadow-2xs flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap w-full">
+        <h1 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+          <Users className="w-5 h-5 text-sky-600" />
+          <span>Klienter</span>
+          <span className="text-xs font-normal text-slate-400">({clients.length})</span>
+        </h1>
 
         {isSuperAdmin && (
           <button
             onClick={() => setIsNewClientModalOpen(true)}
-            className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold flex items-center gap-1 shadow-xs flex-shrink-0"
+            className="px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors flex-shrink-0"
           >
             <UserPlus className="w-3.5 h-3.5" />
-            Ny klient
+            <span>Ny klient</span>
           </button>
         )}
       </div>
 
       {/* Søk */}
-      <div className="bg-white p-3 rounded-none sm:rounded-2xl border-y sm:border border-slate-200 shadow-xs flex items-center gap-2 w-full">
-        <Search className="w-4 h-4 text-slate-400 flex-shrink-0" />
+      <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200/80 shadow-2xs flex items-center gap-2.5 w-full">
+        <Search className="w-4 h-4 text-slate-400 flex-shrink-0 ml-1" />
         <input
           type="text"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Søk kundenr (#1000), navn, telefon..."
-          className="w-full min-w-0 flex-1 text-xs sm:text-sm outline-none text-slate-800 placeholder:text-slate-400"
+          placeholder="Søk etter kundenr (#1000), navn eller telefon..."
+          className="w-full min-w-0 flex-1 text-xs sm:text-sm outline-none text-slate-800 placeholder:text-slate-400 bg-transparent"
         />
         {searchTerm && (
-          <button onClick={() => setSearchTerm('')} className="text-[11px] text-slate-400 flex-shrink-0">
+          <button onClick={() => setSearchTerm('')} className="text-xs text-slate-400 hover:text-slate-600 px-2 flex-shrink-0">
             Nullstill
           </button>
         )}
       </div>
 
       {feedbackMessage && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs px-4 py-2.5 rounded-xl font-medium flex items-center justify-between shadow-xs">
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs px-4 py-2.5 rounded-xl font-medium flex items-center justify-between shadow-2xs">
           <span>{feedbackMessage}</span>
           <button onClick={() => setFeedbackMessage(null)} className="text-emerald-500 hover:text-emerald-700">
             <X className="w-4 h-4" />
@@ -237,7 +235,7 @@ export const ClientListView: React.FC<ClientListViewProps> = ({ onOpenJournal })
       )}
 
       {/* Kolonnebasert tabellvisning for klienter (desktop) + Kortvisning (mobil) */}
-      <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-slate-200 shadow-xs overflow-hidden w-full">
+      <div className="bg-white rounded-xl border border-slate-200/80 shadow-2xs overflow-hidden w-full">
         {/* Mobil kortliste */}
         <div className="sm:hidden divide-y divide-slate-100">
           {filteredClients.length === 0 ? (

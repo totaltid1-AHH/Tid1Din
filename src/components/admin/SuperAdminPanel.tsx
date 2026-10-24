@@ -461,32 +461,29 @@ export const SuperAdminPanel: React.FC = () => {
   const therapistList = users.filter(u => u.role === 'admin' || u.role === 'hovedadmin');
 
   return (
-    <div className="space-y-2.5 sm:space-y-5 w-full">
-      
+    <div className="space-y-4 w-full">
       {/* Header og faner */}
-      <div className="bg-white rounded-none sm:rounded-2xl p-3 sm:p-5 border-y sm:border border-slate-200 shadow-xs space-y-3 w-full">
+      <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200/80 shadow-2xs space-y-3.5 w-full">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
-            <h1 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-1.5">
-              <Building2 className="w-5 h-5 text-sky-600" />
-              Klinikkinnstillinger
-            </h1>
-          </div>
+          <h1 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+            <Building2 className="w-5 h-5 text-sky-600" />
+            <span>Klinikkinnstillinger</span>
+          </h1>
 
           {saveSuccessMessage && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-xs font-semibold self-start sm:self-center">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-medium self-start sm:self-center">
               <Check className="w-3.5 h-3.5 text-emerald-600" />
-              {saveSuccessMessage}
+              <span>{saveSuccessMessage}</span>
             </span>
           )}
         </div>
 
         {/* Faner */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
           <button
             onClick={() => setActiveSubTab('working_hours')}
-            className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-all flex items-center gap-1.5 flex-shrink-0 ${
-              activeSubTab === 'working_hours' ? 'bg-sky-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 flex-shrink-0 ${
+              activeSubTab === 'working_hours' ? 'bg-sky-600 text-white font-semibold shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
             <Clock className="w-3.5 h-3.5" />
@@ -495,26 +492,23 @@ export const SuperAdminPanel: React.FC = () => {
 
           <button
             onClick={() => setActiveSubTab('admins')}
-            className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-all flex items-center gap-1.5 flex-shrink-0 ${
-              activeSubTab === 'admins' ? 'bg-sky-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 flex-shrink-0 ${
+              activeSubTab === 'admins' ? 'bg-sky-600 text-white font-semibold shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
             <Users className="w-3.5 h-3.5" />
-            <span className="sm:hidden">Personell ({therapistList.length})</span>
-            <span className="hidden sm:inline">Terapeuter & Administratorer ({therapistList.length})</span>
+            <span>Terapeuter ({therapistList.length})</span>
           </button>
 
           <button
             onClick={() => setActiveSubTab('sms')}
-            className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-all flex items-center gap-1.5 flex-shrink-0 ${
-              activeSubTab === 'sms' ? 'bg-sky-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 flex-shrink-0 ${
+              activeSubTab === 'sms' ? 'bg-sky-600 text-white font-semibold shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
             <MessageSquare className="w-3.5 h-3.5" />
-            <span>SMS-innstillinger</span>
+            <span>SMS & Varsler</span>
           </button>
-
-
         </div>
       </div>
 

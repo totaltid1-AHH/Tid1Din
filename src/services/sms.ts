@@ -1,5 +1,6 @@
 import { Appointment, SmsSettings, SmsLog } from '../types';
 import { dbService } from './db';
+import { auth } from '../config/firebase';
 
 export class SmsService {
   /**
@@ -100,11 +101,15 @@ export class SmsService {
   }
 
   /**
-   * Genererer en sikker online møtelenke for videokonsultasjoner
+   * Genererer en sikker og uforutsigbar online møtelenke for videokonsultasjoner
+   * ved hjelp av kryptografisk tilfeldig entropi for å forhindre uautorisert avlytting.
    */
-  public generateMeetingLink(appointmentId: string): string {
-    const cleanId = appointmentId.replace(/[^a-zA-Z0-9]/g, '');
-    return `https://meet.jit.si/Tid1Din-Klinikk-${cleanId}`;
+  public generateMeetingLink(appointmentId?: string): string {
+    const randomEntropy = Array.from(window.crypto.getRandomValues(new Uint8Array(8)))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+    const cleanId = (appointmentId || 'apt').replace(/[^a-zA-Z0-9]/g, '').substring(0, 10);
+    return `https://meet.jit.si/Tid1Din-Klinikk-${cleanId}-${randomEntropy}`;
   }
 
   /**
@@ -156,10 +161,16 @@ export class SmsService {
         window.location.port === '5173'
       );
 
-      // Endepunkter:
-      // 1. /api/send-sms (Firebase Hosting rewrite til Cloud Function sendSms)
-      // 2. Direkte Cloud Function URL (i us-central1) som fallback
-      // 3. /api/gatewayapi/rest/mtsms (kun aktiv lokalt med Vite dev-server proxy dersom apiKey finnes)
+      // Hent eventuell Firebase Auth ID-token for sikker autentisering mot Cloud Function
+      let idToken: string | null = null;
+      if (auth?.currentUser) {
+        try {
+          idToken = await auth.currentUser.getIdToken();
+        } catch {
+          // Ignorer hvis ikke tilgjengelig
+        }
+      }
+
       const endpoints: string[] = [];
       if (isLocalHost && apiKey.length > 5) {
         endpoints.push('/api/gatewayapi/rest/mtsms');
@@ -192,7 +203,8 @@ export class SmsService {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'Accept': 'application/json'
+                'Accept': 'application/json',
+                ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {})
               },
               body: JSON.stringify({
                 toPhone: toPhone,
@@ -201,6 +213,7 @@ export class SmsService {
                 message: message,
                 text: message,
                 sender: cleanSender,
+                companyId: targetCompId,
                 ...(apiKey ? { apiKey } : {})
               })
             });

@@ -538,6 +538,7 @@ export const BookingView: React.FC<BookingViewProps> = ({
 
         savedApt = {
           id: appointmentId,
+          companyId: clientObj.companyId || currentUser?.companyId || dbService.getActiveCompanyId(),
           clientId: clientObj.uid,
           clientNumber: clientObj.customerNumber || 1000,
           clientName: clientObj.displayName,

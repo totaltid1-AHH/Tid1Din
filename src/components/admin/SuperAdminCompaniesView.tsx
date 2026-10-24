@@ -303,45 +303,36 @@ export const SuperAdminCompaniesView: React.FC = () => {
         <div className="space-y-4">
           
           {/* Toppseksjon med tittel, registrering og søkefelt */}
-          <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-xs space-y-4">
+          <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200/80 shadow-2xs space-y-3.5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
-                    <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                    Super-admin portal
-                  </span>
-                  <span className="text-xs text-slate-400 font-mono">Bedriftsoversikt</span>
-                </div>
-                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                  <Building2 className="w-6 h-6 text-indigo-600" />
-                  Bedrifter ({companies.length})
+                <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-sky-600" />
+                  <span>Bedrifter</span>
+                  <span className="text-xs font-normal text-slate-400">({companies.length})</span>
                 </h1>
-                <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-                  Trykk på en bedrift for å vise eller endre all informasjon.
-                </p>
               </div>
 
               <button
                 onClick={handleOpenCreate}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-bold shadow-md shadow-indigo-600/20 transition-all self-start sm:self-center"
+                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shadow-xs transition-colors self-start sm:self-center"
               >
-                <Plus className="w-4 h-4 stroke-[2.5]" />
-                <span>Registrer ny bedrift</span>
+                <Plus className="w-3.5 h-3.5" />
+                <span>Ny bedrift</span>
               </button>
             </div>
 
             {/* Søkefelt */}
-            <div className="pt-2 flex items-center gap-2">
+            <div className="flex items-center gap-2">
               <div className="relative flex-1">
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Søk etter bedrift eller telefonnummer..."
-                  className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-slate-50/50"
+                  placeholder="Søk etter bedrift eller telefon..."
+                  className="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-200/80 text-xs sm:text-sm focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 focus:outline-none bg-slate-50/50"
                 />
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
               </div>
             </div>
           </div>

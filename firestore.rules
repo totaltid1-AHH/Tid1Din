@@ -1,8 +1,207 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ===============================================================
+    // SIKKERHETSKONTROLLER & HJELPEFUNKSJONER (DinTid Flerbedrift)
+    // ===============================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email in ['total.tid1@gmail.com', 'superadmin@dintid.no'] ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         getUserData().role == 'superadmin')
+      );
+    }
+
+    function isHovedAdmin() {
+      return isSignedIn() && (
+        isSuperAdmin() ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         getUserData().role == 'hovedadmin')
+      );
+    }
+
+    function isStaff() {
+      return isSignedIn() && (
+        isSuperAdmin() ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         (getUserData().role in ['superadmin', 'hovedadmin', 'admin']))
+      );
+    }
+
+    function belongsToCompany(companyId) {
+      return isSuperAdmin() || (
+        isStaff() && getUserData().companyId == companyId
+      );
+    }
+
+    // ===============================================================
+    // 1. BEDRIFTER (COMPANIES)
+    // ===============================================================
+    match /companies/{companyId} {
+      // Innloggede brukere kan lese bedriftsinformasjon
+      allow read: if isSignedIn();
+      // Kun superadmin har adgang til å opprette, endre eller slette bedrifter
+      allow write: if isSuperAdmin();
+    }
+
+    // ===============================================================
+    // 2. BRUKERPROFILER (USERS)
+    // ===============================================================
+    match /users/{userId} {
+      // Bruker kan lese sin egen profil. Superadmin kan lese alle.
+      // Klinikkpersonell kan lese brukere innen sin egen bedrift.
+      // Klienter kan lese behandlere innen sin egen bedrift for timebestilling.
+      allow read: if isSignedIn() && (
+        request.auth.uid == userId ||
+        isSuperAdmin() ||
+        (isStaff() && resource.data.companyId == getUserData().companyId) ||
+        (resource.data.role in ['admin', 'hovedadmin'] && resource.data.companyId == getUserData().companyId)
+      );
+
+      // Superadmin og klinikkpersonell kan opprette brukere (klienter/behandlere)
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        isStaff() ||
+        request.auth.uid == userId
+      );
+
+      // Oppdatering: Bruker selv, superadmin eller hovedadmin for bedriften
+      allow update: if isSignedIn() && (
+        request.auth.uid == userId ||
+        isSuperAdmin() ||
+        (isHovedAdmin() && resource.data.companyId == getUserData().companyId)
+      );
+
+      // Sletting: Kun superadmin eller hovedadmin for bedriften
+      allow delete: if isSuperAdmin() || (
+        isHovedAdmin() && resource.data.companyId == getUserData().companyId && resource.data.role != 'hovedadmin'
+      );
+    }
+
+    // ===============================================================
+    // 3. TIMEAVTALER (APPOINTMENTS)
+    // ===============================================================
+    match /appointments/{appointmentId} {
+      // Lese: Superadmin, klinikkpersonell i bedriften, eller klienten selv
+      allow read: if isSignedIn() && (
+        isSuperAdmin() ||
+        (isStaff() && resource.data.companyId == getUserData().companyId) ||
+        resource.data.clientId == request.auth.uid
+      );
+
+      // Opprette: Klinikkpersonell eller klient som bestiller for seg selv
+      allow create: if isSignedIn() && (
+        isStaff() ||
+        request.resource.data.clientId == request.auth.uid
+      );
+
+      // Oppdatere: Klinikkpersonell kan endre avtaler; klient kan kun avbestille sin egen time
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (isStaff() && resource.data.companyId == getUserData().companyId) ||
+        (resource.data.clientId == request.auth.uid && request.resource.data.status == 'cancelled')
+      );
+
+      // Slette: Kun autorisert klinikkpersonell eller superadmin
+      allow delete: if isSuperAdmin() || (
+        isStaff() && resource.data.companyId == getUserData().companyId
+      );
+    }
+
+    // ===============================================================
+    // 4. JOURNALNOTATER (JOURNALS) - STRENGT BESKYTTET HELSEDATA
+    // ===============================================================
+    match /journals/{journalId} {
+      // Pasienter og utenforstående skal ALDRI ha direkte innsyn i journaler via Firestore!
+      // Kun autorisert helsepersonell / behandlere tilknyttet bedriften eller superadmin
+      allow read: if isSignedIn() && (
+        isSuperAdmin() ||
+        (isStaff() && resource.data.companyId == getUserData().companyId)
+      );
+
+      allow create, update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (isStaff() && request.resource.data.companyId == getUserData().companyId)
+      );
+
+      allow delete: if isSuperAdmin() || (
+        isHovedAdmin() && resource.data.companyId == getUserData().companyId
+      );
+    }
+
+    // ===============================================================
+    // 5. ARBEIDSTID & INNSTILLINGER (WORKING HOURS)
+    // ===============================================================
+    match /workingHours/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin() || isStaff();
+    }
+
+    // ===============================================================
+    // 6. FERIER & FRAVÆR (HOLIDAYS)
+    // ===============================================================
+    match /holidays/{holidayId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin() || isStaff();
+    }
+
+    // ===============================================================
+    // 7. SMS-INNSTILLINGER & MALER (SMS SETTINGS & TEMPLATES)
+    // ===============================================================
+    match /smsSettings/{companyId} {
+      // Inneholder API-nøkler: kun superadmin og bedriftens hovedadmin har adgang
+      allow read, write: if isSuperAdmin() || (isHovedAdmin() && belongsToCompany(companyId));
+    }
+
+    match /smsTemplates/{templateId} {
+      allow read: if isStaff();
+      allow write: if isSuperAdmin() || isHovedAdmin();
+    }
+
+    match /systemConfig/{configId} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    // ===============================================================
+    // 8. SMS-LOGGER
+    // ===============================================================
+    match /smsLogs/{logId} {
+      allow read: if isSuperAdmin() || isStaff();
+      allow create: if isStaff();
+      allow update, delete: if false; // Logger kan aldri manipuleres
+    }
+
+    // ===============================================================
+    // 9. SYSTEMREVISJONSLOGG (AUDIT LOGS)
+    // ===============================================================
+    match /systemLogs/{logId} {
+      allow read: if isSuperAdmin() || isHovedAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if false; // Uforanderlig revisjonslogg
+    }
+
+    // ===============================================================
+    // 10. PASSORD-TILBAKESTILLINGER (SERVER-ONLY VIA CLOUD FUNCTIONS)
+    // ===============================================================
+    match /passwordResets/{resetId} {
+      allow read, write: if false; // Kun Firebase Admin SDK har adgang
+    }
+
+    // ===============================================================
+    // STANDARD: AVVIS ALL ANNEN TILGANG (DEFAULT DENY)
+    // ===============================================================
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

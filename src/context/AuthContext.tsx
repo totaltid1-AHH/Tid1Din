@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserProfile, UserRole, AdminPermissions, Company } from '../types';
 import { dbService, DEFAULT_COMPANY } from '../services/db';
 import { verifyTotpCode, generateTotpSecret } from '../utils/totp';
+import { verifyPassword, hashPassword } from '../utils/crypto';
 import { auth, isFirebaseConfigured, googleProvider } from '../config/firebase';
 import { signInWithPopup, signOut } from 'firebase/auth';
 
@@ -34,6 +35,7 @@ interface AuthContextType {
     address: string;
     birthDate: string;
     notes?: string;
+    password?: string;
   }) => Promise<UserProfile>;
   switchUserRole: (uid: string) => Promise<void>;
   switchCompany: (companyId: string) => Promise<void>;
@@ -63,18 +65,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const savedUid = localStorage.getItem('dintid_active_uid');
         if (savedUid) {
           const user = await dbService.getUserById(savedUid);
-          if (user) {
-            if (user.role === 'client') {
-              // Klient-innlogging er satt på pause
-              localStorage.removeItem('dintid_active_uid');
-              setCurrentUser(null);
-            } else {
-              setCurrentUser(user);
-              const targetCompId = user.companyId || dbService.getActiveCompanyId();
-              dbService.setActiveCompanyId(targetCompId);
-              const matchedComp = comps.find(c => c.id === targetCompId) || comps[0] || null;
-              setActiveCompany(matchedComp);
-            }
+          if (user && user.isActive !== false) {
+            setCurrentUser(user);
+            const targetCompId = user.companyId || dbService.getActiveCompanyId();
+            dbService.setActiveCompanyId(targetCompId);
+            const matchedComp = comps.find(c => c.id === targetCompId) || comps[0] || null;
+            setActiveCompany(matchedComp);
+          } else {
+            localStorage.removeItem('dintid_active_uid');
+            setCurrentUser(null);
           }
         } else {
           const targetCompId = dbService.getActiveCompanyId();
@@ -252,15 +251,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, requires2FA: false, error: 'Feil brukernavn/e-post eller passord' };
     }
 
-    // Klient-innlogging er satt på pause
-    if (user.role === 'client') {
-      return { 
-        success: false, 
-        requires2FA: false, 
-        error: 'Klient-innlogging er midlertidig satt på pause. Kun behandlere og klinikkadministratorer kan logge inn.' 
-      };
-    }
-
     // Sjekk om brukerkontoen er aktiv
     if (user.isActive === false) {
       return { 
@@ -270,15 +260,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
-    // Passord-sjekk: krev gyldig passord
-    if (user.password && (password === undefined || user.password !== password)) {
+    // Passord-sjekk: krev gyldig passord og verifiser mot PBKDF2 hash
+    if (!password) {
+      return { success: false, requires2FA: false, error: 'Vennligst oppgi passord' };
+    }
+
+    const isPasswordValid = await verifyPassword(password, user.password || '');
+    if (!isPasswordValid) {
       return { success: false, requires2FA: false, error: 'Feil brukernavn/e-post eller passord' };
+    }
+
+    // Oppgrader automatisk eldre passord til sikker PBKDF2-hash
+    if (user.password && !user.password.startsWith('PBKDF2:')) {
+      try {
+        user.password = await hashPassword(password);
+        await dbService.saveUser(user);
+      } catch (hashErr) {
+        console.warn('Kunne ikke oppgradere passordhash:', hashErr);
+      }
     }
 
     // Hvis bruker har 2FA aktivert, be om engangskode fra Google Authenticator
     if (user.twoFactorEnabled) {
       if (!user.twoFactorSecret) {
-        user.twoFactorSecret = 'JBSWY3DPEHPK3PXP';
+        user.twoFactorSecret = generateTotpSecret(16);
+        await dbService.saveUser(user);
       }
       setPendingUser(user);
       setIs2FAModalOpen(true);
@@ -315,11 +321,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (err) {
         console.error('Feil ved verifisering av TOTP-kode:', err);
       }
-    }
-
-    // Tillat også testkode '123456' i test-/demomiljø
-    if (!isValid && trimmed === '123456') {
-      isValid = true;
     }
 
     if (isValid) {
@@ -403,6 +404,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const switchUserRole = async (uid: string) => {
+    // SIKKERHETSKONTROLL: Kun forhåndsgodkjent superadmin kan bytte testprofil
+    if (!currentUser || currentUser.role !== 'superadmin') {
+      console.warn('Sikkerhetsadvarsel: Uautorisert forsøk på rollebytte ble avvist.');
+      return;
+    }
+
     const user = await dbService.getUserById(uid);
     if (user) {
       setCurrentUser(user);
@@ -427,6 +434,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     address: string;
     birthDate: string;
     notes?: string;
+    password?: string;
   }): Promise<UserProfile> => {
     const activeCompanyId = dbService.getActiveCompanyId();
     const customerNumber = await dbService.getNextCustomerNumber(activeCompanyId);
@@ -443,6 +451,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       address: data.address,
       birthDate: data.birthDate,
       notes: data.notes || '',
+      password: data.password || 'demo1234',
       twoFactorEnabled: false,
       createdAt: new Date().toISOString()
     };

@@ -6,7 +6,7 @@ import {
   Appointment
 } from '../../types';
 import { dbService } from '../../services/db';
-import { encryptData, decryptData } from '../../utils/crypto';
+import { encryptData, decryptData, getClinicEncryptionKey } from '../../utils/crypto';
 import { useAuth } from '../../context/AuthContext';
 import { 
   FileText, 
@@ -82,10 +82,11 @@ export const JournalModal: React.FC<JournalModalProps> = ({
       dbService.getAppointmentsByClient(client.uid)
     ]);
     
-    // Dekrypter hver journaloppføring
+    // Dekrypter hver journaloppføring med klinikkens nøkkel
     const decryptedList: DecryptedEntry[] = await Promise.all(
       rawEntries.map(async (entry) => {
-        const plain = await decryptData(entry.content);
+        const targetKey = getClinicEncryptionKey(entry.companyId || client.companyId);
+        const plain = await decryptData(entry.content, targetKey);
         return { ...entry, decryptedContent: plain };
       })
     );
@@ -176,7 +177,8 @@ export const JournalModal: React.FC<JournalModalProps> = ({
     if (!noteContent.trim() || !currentUser) return;
 
     try {
-      const encrypted = await encryptData(noteContent);
+      const targetCompany = client.companyId || currentUser.companyId;
+      const encrypted = await encryptData(noteContent, getClinicEncryptionKey(targetCompany));
       const now = new Date().toISOString();
 
       if (editingEntryId) {

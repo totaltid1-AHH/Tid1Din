@@ -6,7 +6,7 @@ import {
   Appointment 
 } from '../../types';
 import { dbService } from '../../services/db';
-import { encryptData, decryptData, maskPersonalInfo } from '../../utils/crypto';
+import { encryptData, decryptData, maskPersonalInfo, getClinicEncryptionKey } from '../../utils/crypto';
 import { useAuth } from '../../context/AuthContext';
 import { jsPDF } from 'jspdf';
 import { 
@@ -261,7 +261,8 @@ export const JournalView: React.FC<JournalViewProps> = ({
 
       const decryptedList: DecryptedEntry[] = await Promise.all(
         rawEntries.map(async (entry) => {
-          const plain = await decryptData(entry.content);
+          const key = getClinicEncryptionKey(entry.companyId || selectedClient?.companyId);
+          const plain = await decryptData(entry.content, key);
           return { ...entry, decryptedContent: plain };
         })
       );
@@ -587,7 +588,8 @@ export const JournalView: React.FC<JournalViewProps> = ({
 
     setIsSubmitting(true);
     try {
-      const encrypted = await encryptData(noteContent);
+      const targetCompany = selectedClient.companyId || currentUser.companyId;
+      const encrypted = await encryptData(noteContent, getClinicEncryptionKey(targetCompany));
       const now = new Date().toISOString();
 
       if (editingEntryId) {
@@ -662,6 +664,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
 
           const nextApt: Appointment = {
             id: 'apt_' + Date.now(),
+            companyId: targetCompany,
             clientId: selectedClient.uid,
             clientNumber: selectedClient.customerNumber || 1000,
             clientName: selectedClient.displayName,
@@ -744,6 +747,7 @@ export const JournalView: React.FC<JournalViewProps> = ({
 
       const newAppointment: Appointment = {
         id: 'apt_' + Date.now(),
+        companyId: selectedClient.companyId || currentUser.companyId || dbService.getActiveCompanyId(),
         clientId: selectedClient.uid,
         clientNumber: selectedClient.customerNumber || 1000,
         clientName: selectedClient.displayName,

@@ -49,6 +49,14 @@
         "function": "sendSms"
       },
       {
+        "source": "/api/request-password-reset",
+        "function": "requestPasswordReset"
+      },
+      {
+        "source": "/api/verify-password-reset",
+        "function": "verifyPasswordReset"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

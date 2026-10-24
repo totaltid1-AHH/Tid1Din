@@ -90,7 +90,7 @@ export const UserCalendarView: React.FC<UserCalendarViewProps> = ({ onNavigateTo
 
   const loadData = async () => {
     const [apts, users] = await Promise.all([
-      dbService.getAppointments(),
+      isClient && currentUser ? dbService.getAppointmentsByClient(currentUser.uid) : dbService.getAppointments(),
       dbService.getUsers()
     ]);
     setAppointments(apts);
@@ -199,18 +199,13 @@ export const UserCalendarView: React.FC<UserCalendarViewProps> = ({ onNavigateTo
     <div className="space-y-3 sm:space-y-5 w-full">
       
       {/* Toppseksjon med tittel og "Bestill time"-knapp */}
-      <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-slate-200 p-4 sm:p-5 shadow-xs w-full">
+      <div className="bg-white rounded-xl border border-slate-200/80 p-4 sm:p-5 shadow-2xs w-full">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-base sm:text-xl font-bold text-slate-900 flex items-center gap-2">
+            <h1 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
               <CalendarIcon className="w-5 h-5 text-sky-600" />
-              <span>{isClient ? 'Kalender – Mine avtaler' : 'Kalender – Avtaler & Timeplan'}</span>
+              <span>Kalender</span>
             </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {isClient 
-                ? `Du har ${upcomingCount} kommende ${upcomingCount === 1 ? 'avtale' : 'avtaler'} i kalenderen.`
-                : 'Oversikt over bookede konsultasjoner.'}
-            </p>
           </div>
 
           <div className="flex items-center gap-2.5">

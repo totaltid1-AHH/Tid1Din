@@ -125,96 +125,85 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   });
 
   return (
-    <div className="space-y-2.5 sm:space-y-5 w-full">
-      
-      {!canViewName && (
-        <div className="p-3 rounded-none sm:rounded-xl bg-amber-50 border-y sm:border border-amber-200 text-amber-900 text-xs flex items-center justify-between w-full">
-          <div className="flex items-center gap-2">
-            <EyeOff className="w-4 h-4 text-amber-600 flex-shrink-0" />
-            <span className="font-medium">Skjermet modus: Klientnavn, telefon og e-post er maskert.</span>
-          </div>
-        </div>
-      )}
-
-      {/* Hurtigstatistikk - Kompakt grid på mobil */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 px-2 sm:px-0 w-full">
-        
-        <div className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center flex-shrink-0">
-            <Clock className="w-5 h-5" />
+    <div className="space-y-4 w-full">
+      {/* Nøkkeltall / Oversikt */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3.5 w-full">
+        <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/80 shadow-2xs flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center flex-shrink-0">
+            <Clock className="w-4 h-4" />
           </div>
           <div>
-            <p className="text-[10px] text-slate-500 font-bold uppercase">I dag</p>
-            <p className="text-lg sm:text-xl font-black text-slate-900">{todayAppointments.length}</p>
+            <p className="text-[11px] text-slate-500 font-medium">I dag</p>
+            <p className="text-lg sm:text-xl font-bold text-slate-900 leading-tight">{todayAppointments.length}</p>
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center flex-shrink-0">
-            <Calendar className="w-5 h-5" />
+        <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/80 shadow-2xs flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center flex-shrink-0">
+            <Calendar className="w-4 h-4" />
           </div>
           <div>
-            <p className="text-[10px] text-slate-500 font-bold uppercase">Kommende</p>
-            <p className="text-lg sm:text-xl font-black text-slate-900">{upcomingAppointments.length}</p>
+            <p className="text-[11px] text-slate-500 font-medium">Kommende</p>
+            <p className="text-lg sm:text-xl font-bold text-slate-900 leading-tight">{upcomingAppointments.length}</p>
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0">
-            <UserCheck className="w-5 h-5" />
+        <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/80 shadow-2xs flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center flex-shrink-0">
+            <UserCheck className="w-4 h-4" />
           </div>
           <div>
-            <p className="text-[10px] text-slate-500 font-bold uppercase">Klienter</p>
-            <p className="text-lg sm:text-xl font-black text-slate-900">{clients.length}</p>
+            <p className="text-[11px] text-slate-500 font-medium">Klienter</p>
+            <p className="text-lg sm:text-xl font-bold text-slate-900 leading-tight">{clients.length}</p>
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center flex-shrink-0">
-            <XCircle className="w-5 h-5" />
+        <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/80 shadow-2xs flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center flex-shrink-0">
+            <XCircle className="w-4 h-4" />
           </div>
           <div>
-            <p className="text-[10px] text-slate-500 font-bold uppercase">Avbestilt</p>
-            <p className="text-lg sm:text-xl font-black text-slate-900">{cancelledAppointments.length}</p>
+            <p className="text-[11px] text-slate-500 font-medium">Avbestilt</p>
+            <p className="text-lg sm:text-xl font-bold text-slate-900 leading-tight">{cancelledAppointments.length}</p>
           </div>
         </div>
-
       </div>
 
-      {/* Hurtigsøk etter klient - full bredde */}
-      <div className="bg-white rounded-none sm:rounded-2xl p-3 border-y sm:border border-slate-200 shadow-xs flex items-center gap-2.5 w-full">
-        <Search className="w-4 h-4 text-slate-400 flex-shrink-0" />
+      {/* Søk */}
+      <div className="bg-white rounded-xl p-2.5 sm:p-3 border border-slate-200/80 shadow-2xs flex items-center gap-2.5 w-full">
+        <Search className="w-4 h-4 text-slate-400 flex-shrink-0 ml-1" />
         <input
           type="text"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Søk etter klient (#1000, navn, telefon)..."
-          className="w-full text-xs sm:text-sm outline-none text-slate-800 placeholder:text-slate-400"
+          placeholder="Søk i avtaler (#1000, navn, telefon)..."
+          className="w-full text-xs sm:text-sm outline-none text-slate-800 placeholder:text-slate-400 bg-transparent"
         />
         {searchTerm && (
-          <button onClick={() => setSearchTerm('')} className="text-[11px] text-slate-400">
+          <button onClick={() => setSearchTerm('')} className="text-xs text-slate-400 hover:text-slate-600 px-2">
             Nullstill
           </button>
         )}
       </div>
 
       {/* Dagens Timer */}
-      <div className="bg-white rounded-none sm:rounded-3xl p-3 sm:p-5 border-y sm:border border-slate-200 shadow-xs space-y-3 w-full">
-        <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-          <h2 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
+      <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200/80 shadow-2xs space-y-3 w-full">
+        <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+          <h2 className="text-xs sm:text-sm font-semibold text-slate-900 flex items-center gap-2">
             <Clock className="w-4 h-4 text-sky-600" />
-            Dagens timer ({format(new Date(), 'd. MMMM', { locale: nb })})
+            <span>Dagens timer</span>
+            <span className="text-slate-400 font-normal">({format(new Date(), 'd. MMMM', { locale: nb })})</span>
           </h2>
           <button
             onClick={onNavigateToCalendar}
-            className="text-[11px] font-bold text-sky-600 hover:text-sky-800"
+            className="text-xs font-medium text-sky-600 hover:text-sky-700"
           >
-            Kalender &rarr;
+            Se kalender &rarr;
           </button>
         </div>
 
         {todayAppointments.length === 0 ? (
-          <p className="text-xs text-slate-400 py-3 text-center">Ingen timer planlagt for i dag.</p>
+          <p className="text-xs text-slate-400 py-4 text-center">Ingen timer planlagt for i dag.</p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
             {todayAppointments.map((apt) => {
@@ -222,52 +211,51 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               const displayPhone = canViewPhone ? (apt.clientPhone || 'Ingen tlf') : maskPersonalInfo(apt.clientPhone, 'phone');
 
               return (
-                <div key={apt.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                <div key={apt.id} className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/70 space-y-2.5">
                   <div className="flex items-start justify-between">
                     <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-slate-900 text-xs sm:text-sm">{displayName}</span>
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-100 text-sky-800 font-mono font-bold">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-900 text-xs sm:text-sm">{displayName}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200/70 text-slate-600 font-mono font-semibold">
                           #{apt.clientNumber}
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
-                        <span className="font-mono font-bold text-slate-800">{apt.startTime} - {apt.endTime}</span>
+                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                        <span className="font-mono font-semibold text-slate-800">{apt.startTime} - {apt.endTime}</span>
                         <span>•</span>
-                        <span>{apt.isOnline ? 'Online' : 'Fysisk'}</span>
+                        <span>{apt.isOnline ? 'Online' : 'Oppmøte'}</span>
                       </div>
 
-                      <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                      <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
                         <Phone className="w-3 h-3" />
                         <span>{displayPhone}</span>
                       </div>
                     </div>
 
-                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/60">
                       {apt.status === 'confirmed' ? 'Bekreftet' : apt.status}
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between pt-1.5 border-t border-slate-200 text-xs">
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-200/70 text-xs">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {canEditJournals && (
                         <button
                           onClick={() => handleOpenJournalForClient(apt.clientId, apt)}
-                          className="px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 font-semibold text-[11px] flex items-center gap-1 transition-colors border border-sky-100"
+                          className="px-2.5 py-1 rounded-lg bg-white text-slate-700 hover:bg-slate-100 font-medium text-xs transition-colors border border-slate-200/80 shadow-2xs"
                         >
-                          <FileText className="w-3 h-3" />
                           Journal
                         </button>
                       )}
 
                       <button
                         onClick={() => handleOpenSmsModal(apt, 'delay')}
-                        className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-[11px] flex items-center gap-1 transition-colors border border-amber-200 shadow-2xs"
-                        title="Send forsinkelses-SMS (+15 min) eller ombook time"
+                        className="px-2.5 py-1 rounded-lg bg-white text-slate-700 hover:bg-slate-100 font-medium text-xs flex items-center gap-1 transition-colors border border-slate-200/80 shadow-2xs"
+                        title="Varsle klient"
                       >
-                        <MessageSquare className="w-3 h-3 text-amber-600" />
-                        Varsle / Flytt
+                        <MessageSquare className="w-3 h-3 text-slate-400" />
+                        Varsle
                       </button>
 
                       {apt.isOnline && apt.meetingLink && (
@@ -275,7 +263,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           href={apt.meetingLink}
                           target="_blank"
                           rel="noreferrer"
-                          className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold text-[11px] flex items-center gap-1 transition-colors border border-indigo-100"
+                          className="px-2.5 py-1 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 font-medium text-xs flex items-center gap-1 transition-colors border border-sky-100"
                         >
                           <Video className="w-3 h-3" />
                           Møterom
@@ -286,15 +274,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => handleUpdateStatus(apt.id, 'completed')}
-                        className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
-                        title="Fullført"
+                        className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-colors"
+                        title="Fullfør time"
                       >
                         <CheckCircle2 className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleUpdateStatus(apt.id, 'cancelled')}
-                        className="p-1 text-rose-500 hover:bg-rose-50 rounded"
-                        title="Avbestill"
+                        className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded transition-colors"
+                        title="Avbestill time"
                       >
                         <XCircle className="w-4 h-4" />
                       </button>
@@ -307,10 +295,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         )}
       </div>
 
-      {/* Kommende Timer Tabell */}
-      <div className="bg-white rounded-none sm:rounded-3xl p-3 sm:p-5 border-y sm:border border-slate-200 shadow-xs space-y-3 w-full max-w-full overflow-hidden">
-        <h3 className="text-xs sm:text-sm font-bold text-slate-900">
-          {searchTerm ? `Søk: "${searchTerm}" (${filteredAppointments.length})` : `Kommende timer (${upcomingAppointments.length})`}
+      {/* Kommende Timer */}
+      <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200/80 shadow-2xs space-y-3 w-full">
+        <h3 className="text-xs sm:text-sm font-semibold text-slate-900">
+          {searchTerm ? `Søkeresultat (${filteredAppointments.length})` : `Kommende timer (${upcomingAppointments.length})`}
         </h3>
 
         {/* Mobil kortvisning */}
