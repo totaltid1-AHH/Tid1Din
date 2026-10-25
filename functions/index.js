@@ -156,11 +156,20 @@ exports.sendSms = functions.https.onRequest((req, res) => {
       if (!apiKey) {
         const companyId = body.companyId || "comp_hovden";
         try {
-          const compSettings = await admin.firestore().collection("smsSettings").doc(companyId).get();
+          // 1. Sjekk subcollection under bedriften: companies/{companyId}/smsSettings/config
+          let compSettings = await admin.firestore().collection("companies").doc(companyId).collection("smsSettings").doc("config").get();
+          if (!compSettings.exists) {
+            compSettings = await admin.firestore().collection("companies").doc(companyId).collection("smsSettings").doc(companyId).get();
+          }
+          if (!compSettings.exists) {
+            // 2. Fallback til rot: smsSettings/{companyId}
+            compSettings = await admin.firestore().collection("smsSettings").doc(companyId).get();
+          }
+
           if (compSettings.exists && compSettings.data().apiKey) {
             apiKey = compSettings.data().apiKey;
-            if (!sender && compSettings.data().sender) {
-              sender = compSettings.data().sender;
+            if (!sender && (compSettings.data().treatmentPlace || compSettings.data().sender)) {
+              sender = compSettings.data().treatmentPlace || compSettings.data().sender;
             }
           } else {
             const globalConfig = await admin.firestore().collection("systemConfig").doc("global_sms").get();
@@ -305,7 +314,13 @@ exports.requestPasswordReset = functions.https.onRequest((req, res) => {
       let apiKey = process.env.GATEWAY_API_KEY || "";
       let sender = "Tid1Din";
 
-      const compSettings = await admin.firestore().collection("smsSettings").doc(companyId).get();
+      let compSettings = await admin.firestore().collection("companies").doc(companyId).collection("smsSettings").doc("config").get();
+      if (!compSettings.exists) {
+        compSettings = await admin.firestore().collection("companies").doc(companyId).collection("smsSettings").doc(companyId).get();
+      }
+      if (!compSettings.exists) {
+        compSettings = await admin.firestore().collection("smsSettings").doc(companyId).get();
+      }
       if (compSettings.exists) {
         const data = compSettings.data();
         if (data.apiKey) apiKey = data.apiKey;
@@ -431,17 +446,20 @@ exports.verifyPasswordReset = functions.https.onRequest((req, res) => {
       // Slett den brukte reset-forespørselen umiddelbart
       await resetRef.delete();
 
-      // Logg til revisjonslogg
+      // Logg til revisjonslogg under bedriften og globalt
       const userData = userDoc.data();
-      await admin.firestore().collection("systemLogs").add({
-        companyId: userData.companyId || "comp_hovden",
+      const compId = userData.companyId || "comp_hovden";
+      const logData = {
+        companyId: compId,
         timestamp: new Date().toISOString(),
         userId: resetData.uid,
         userEmail: userData.email || "",
         userRole: userData.role || "client",
         action: "password_reset_sms",
         details: `Passord tilbakestilt sikkert via SMS-verifisering for ${userData.displayName || resetData.uid}`
-      });
+      };
+      await admin.firestore().collection("companies").doc(compId).collection("systemLogs").add(logData).catch(() => null);
+      await admin.firestore().collection("systemLogs").add(logData).catch(() => null);
 
       return res.status(200).json({
         ok: true,

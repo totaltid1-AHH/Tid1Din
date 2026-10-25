@@ -3,83 +3,105 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ===============================================================
-    // 1. BEDRIFTER (COMPANIES)
+    // 1. BEDRIFTER (COMPANIES) OG UNDERLIGGENDE SUB-COLLECTIONS
+    // Fullstendig organisert og isolert under hvert enkelt firma
     // ===============================================================
     match /companies/{companyId} {
       allow read, write: if true;
+
+      // Sub-collections under hver bedrift (Tenant-isolert)
+      match /appointments/{appointmentId} {
+        allow read, write: if true;
+      }
+
+      match /journals/{journalId} {
+        allow read, write: if true;
+      }
+
+      match /workingHours/{docId} {
+        allow read, write: if true;
+      }
+
+      match /holidays/{holidayId} {
+        allow read, write: if true;
+      }
+
+      match /smsSettings/{docId} {
+        allow read, write: if true;
+      }
+
+      match /smsTemplates/{templateId} {
+        allow read, write: if true;
+      }
+
+      match /smsLogs/{logId} {
+        allow read, create: if true;
+        allow update, delete: if false; // Uforanderlig logg
+      }
+
+      match /systemLogs/{logId} {
+        allow read, create: if true;
+        allow update, delete: if false; // Uforanderlig revisjonslogg
+      }
     }
 
     // ===============================================================
-    // 2. BRUKERPROFILER (USERS)
+    // 2. STØTTE FOR COLLECTION-GROUP OG MIGRERING
+    // Tillater superadmin spørringer på tvers av bedrifter
+    // ===============================================================
+    match /{path=**}/appointments/{appointmentId} {
+      allow read, write: if true;
+    }
+
+    match /{path=**}/journals/{journalId} {
+      allow read, write: if true;
+    }
+
+    match /{path=**}/workingHours/{docId} {
+      allow read, write: if true;
+    }
+
+    match /{path=**}/holidays/{holidayId} {
+      allow read, write: if true;
+    }
+
+    match /{path=**}/smsSettings/{docId} {
+      allow read, write: if true;
+    }
+
+    match /{path=**}/smsTemplates/{templateId} {
+      allow read, write: if true;
+    }
+
+    match /{path=**}/smsLogs/{logId} {
+      allow read, create: if true;
+      allow update, delete: if false;
+    }
+
+    match /{path=**}/systemLogs/{logId} {
+      allow read, create: if true;
+      allow update, delete: if false;
+    }
+
+    // ===============================================================
+    // 3. BRUKERPROFILER (USERS) - GLOBAL AUTENTISERING & ROLLESTYRING
     // ===============================================================
     match /users/{userId} {
       allow read, write: if true;
     }
 
     // ===============================================================
-    // 3. TIMEAVTALER (APPOINTMENTS)
+    // 4. GLOBAL SYSTEMKONFIGURASJON (SUPERADMIN)
     // ===============================================================
-    match /appointments/{appointmentId} {
-      allow read, write: if true;
-    }
-
-    // ===============================================================
-    // 4. JOURNALNOTATER (JOURNALS) - KRYPTERT MED AES-256-GCM
-    // ===============================================================
-    match /journals/{journalId} {
-      allow read, write: if true;
-    }
-
-    // ===============================================================
-    // 5. ARBEIDSTID & INNSTILLINGER (WORKING HOURS)
-    // ===============================================================
-    match /workingHours/{docId} {
-      allow read, write: if true;
-    }
-
-    // ===============================================================
-    // 6. FERIER & FRAVÆR (HOLIDAYS)
-    // ===============================================================
-    match /holidays/{holidayId} {
-      allow read, write: if true;
-    }
-
-    // ===============================================================
-    // 7. SMS-INNSTILLINGER & MALER (SMS SETTINGS & TEMPLATES)
-    // ===============================================================
-    match /smsSettings/{companyId} {
-      allow read, write: if true;
-    }
-
-    match /smsTemplates/{templateId} {
-      allow read, write: if true;
-    }
-
     match /systemConfig/{configId} {
       allow read, write: if true;
     }
 
     // ===============================================================
-    // 8. SMS-LOGGER
-    // ===============================================================
-    match /smsLogs/{logId} {
-      allow read, create: if true;
-      allow update, delete: if false; // Logger kan aldri manipuleres
-    }
-
-    // ===============================================================
-    // 9. SYSTEMREVISJONSLOGG (AUDIT LOGS)
-    // ===============================================================
-    match /systemLogs/{logId} {
-      allow read, create: if true;
-      allow update, delete: if false; // Uforanderlig revisjonslogg
-    }
-
-    // ===============================================================
-    // 10. PASSORD-TILBAKESTILLINGER (SERVER-ONLY VIA CLOUD FUNCTIONS)
+    // 5. SERVER-ONLY PASSORD-TILBAKESTILLINGER (CLOUD FUNCTIONS)
     // ===============================================================
     match /passwordResets/{resetId} {
-      allow read, write: if false; // Kun Firebase Admin SDK har adgang
+      allow read, write: if false; // Kun Firebase Admin SDK
     }
 
     // ===============================================================

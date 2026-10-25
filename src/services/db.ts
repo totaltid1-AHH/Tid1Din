@@ -15,6 +15,7 @@ import { encryptData, decryptData, hashPassword } from '../utils/crypto';
 import { db, isFirebaseConfigured } from '../config/firebase';
 import { 
   collection, 
+  collectionGroup,
   doc, 
   getDocs, 
   getDoc, 
@@ -564,6 +565,111 @@ class DatabaseService {
 
       localStorage.setItem(STORAGE_PREFIX + 'initialized', 'true');
     }
+
+    if (isFirebaseConfigured && db) {
+      setTimeout(() => {
+        this.autoMigrateToCompanyHierarchy().catch(console.warn);
+      }, 300);
+    }
+  }
+
+  // --- AUTOMATISK MIGRERING TIL FLERBEDRIFTSHIERARKI ---
+  private migrationInProgress = false;
+  public async autoMigrateToCompanyHierarchy(): Promise<void> {
+    if (this.migrationInProgress || !isFirebaseConfigured || !db) return;
+    if (typeof window !== 'undefined') {
+      try {
+        if (sessionStorage.getItem('dintid_migrated_v1_done')) return;
+      } catch {}
+    }
+    this.migrationInProgress = true;
+    try {
+      console.log('Kontrollerer og migrerer til fullverdig bedriftshierarki i Firestore...');
+
+      // 1. Timeavtaler -> /companies/{companyId}/appointments/{id}
+      const rootAptsSnap = await getDocs(collection(db, 'appointments')).catch(() => null);
+      if (rootAptsSnap && !rootAptsSnap.empty) {
+        for (const docSnap of rootAptsSnap.docs) {
+          const data = docSnap.data() as Appointment;
+          const compId = data.companyId || 'comp_hovden';
+          await setDoc(doc(db, 'companies', compId, 'appointments', docSnap.id), cleanForFirestore(data)).catch(() => null);
+          await deleteDoc(doc(db, 'appointments', docSnap.id)).catch(() => null);
+        }
+      }
+
+      // 2. Journaler -> /companies/{companyId}/journals/{id}
+      const rootJournalsSnap = await getDocs(collection(db, 'journals')).catch(() => null);
+      if (rootJournalsSnap && !rootJournalsSnap.empty) {
+        for (const docSnap of rootJournalsSnap.docs) {
+          const data = docSnap.data() as JournalEntry;
+          const compId = data.companyId || 'comp_hovden';
+          await setDoc(doc(db, 'companies', compId, 'journals', docSnap.id), cleanForFirestore(data)).catch(() => null);
+          await deleteDoc(doc(db, 'journals', docSnap.id)).catch(() => null);
+        }
+      }
+
+      // 3. Arbeidstid -> /companies/{companyId}/workingHours/{docId}
+      const rootWhSnap = await getDocs(collection(db, 'workingHours')).catch(() => null);
+      if (rootWhSnap && !rootWhSnap.empty) {
+        for (const docSnap of rootWhSnap.docs) {
+          const data = docSnap.data() as WorkingHoursConfig;
+          const docId = docSnap.id;
+          let compId = data.companyId;
+          if (!compId) {
+            if (docId.startsWith('wh_comp_')) {
+              compId = docId.replace('wh_', '');
+            } else {
+              compId = 'comp_hovden';
+            }
+          }
+          await setDoc(doc(db, 'companies', compId, 'workingHours', docId), cleanForFirestore(data)).catch(() => null);
+          await deleteDoc(doc(db, 'workingHours', docId)).catch(() => null);
+        }
+      }
+
+      // 4. Ferier & Fravær -> /companies/{companyId}/holidays/{id}
+      const rootHolSnap = await getDocs(collection(db, 'holidays')).catch(() => null);
+      if (rootHolSnap && !rootHolSnap.empty) {
+        for (const docSnap of rootHolSnap.docs) {
+          const data = docSnap.data() as Holiday;
+          const compId = data.companyId || 'comp_hovden';
+          await setDoc(doc(db, 'companies', compId, 'holidays', docSnap.id), cleanForFirestore(data)).catch(() => null);
+          await deleteDoc(doc(db, 'holidays', docSnap.id)).catch(() => null);
+        }
+      }
+
+      // 5. SMS-Maler -> /companies/{companyId}/smsTemplates/{id}
+      const rootTplSnap = await getDocs(collection(db, 'smsTemplates')).catch(() => null);
+      if (rootTplSnap && !rootTplSnap.empty) {
+        for (const docSnap of rootTplSnap.docs) {
+          const data = docSnap.data() as SmsTemplate;
+          const compId = data.companyId || 'comp_hovden';
+          await setDoc(doc(db, 'companies', compId, 'smsTemplates', docSnap.id), cleanForFirestore(data)).catch(() => null);
+          await deleteDoc(doc(db, 'smsTemplates', docSnap.id)).catch(() => null);
+        }
+      }
+
+      // 6. SMS-Innstillinger -> /companies/{companyId}/smsSettings/config
+      const rootSmsSnap = await getDocs(collection(db, 'smsSettings')).catch(() => null);
+      if (rootSmsSnap && !rootSmsSnap.empty) {
+        for (const docSnap of rootSmsSnap.docs) {
+          const compId = docSnap.id;
+          const data = docSnap.data() as SmsSettings;
+          await setDoc(doc(db, 'companies', compId, 'smsSettings', 'config'), cleanForFirestore(data)).catch(() => null);
+        }
+      }
+
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem('dintid_migrated_v1_done', 'true');
+        } catch {}
+      }
+      console.log('Migrering til flerbedriftshierarki fullført.');
+    } catch (e) {
+      console.warn('Migrering feilet eller delvis fullført:', e);
+    } finally {
+      this.migrationInProgress = false;
+    }
   }
 
   // --- BRUKERE PÅ TVERS AV BEDRIFTER ---
@@ -713,7 +819,7 @@ class DatabaseService {
 
   // --- ARBEIDSTID & INNSTILLINGER ---
   public async getWorkingHours(therapistId?: string, companyId?: string, forceRefresh = false): Promise<WorkingHoursConfig> {
-    const targetCompany = companyId || this.getActiveCompanyId();
+    const targetCompany = companyId || this.getActiveCompanyId() || 'comp_hovden';
     const docId = therapistId ? `wh_${therapistId}` : `wh_${targetCompany}`;
     const storageKey = therapistId ? `working_hours_${therapistId}` : `working_hours_${targetCompany}`;
     const now = Date.now();
@@ -728,7 +834,18 @@ class DatabaseService {
     const fetchPromise = (async () => {
       if (isFirebaseConfigured && db) {
         try {
-          const snap = await getDoc(doc(db, 'workingHours', docId));
+          // 1. Sjekk subcollection under bedriften
+          let snap = await getDoc(doc(db, 'companies', targetCompany, 'workingHours', docId));
+
+          // 2. Fallback til rot dersom ikke migrert
+          if (!snap.exists()) {
+            const legacySnap = await getDoc(doc(db, 'workingHours', docId)).catch(() => null);
+            if (legacySnap && legacySnap.exists()) {
+              snap = legacySnap;
+              await setDoc(doc(db, 'companies', targetCompany, 'workingHours', docId), cleanForFirestore(legacySnap.data())).catch(() => null);
+              await deleteDoc(doc(db, 'workingHours', docId)).catch(() => null);
+            }
+          }
 
           if (snap.exists()) {
             const config = snap.data() as WorkingHoursConfig;
@@ -761,7 +878,7 @@ class DatabaseService {
                 id: docId,
                 therapistId: therapistId || localSaved.therapistId
               });
-              await setDoc(doc(db, 'workingHours', docId), cleanConfig).catch(e =>
+              await setDoc(doc(db, 'companies', targetCompany, 'workingHours', docId), cleanConfig).catch(e =>
                 console.warn(`Kunne ikke initiere ${docId} i Firestore:`, e)
               );
               this.memoryWorkingHours.set(docId, { config: cleanConfig, timestamp: Date.now() });
@@ -769,7 +886,10 @@ class DatabaseService {
             }
 
             if (therapistId) {
-              const defaultSnap = await getDoc(doc(db, 'workingHours', `wh_${targetCompany}`)).catch(() => null);
+              let defaultSnap = await getDoc(doc(db, 'companies', targetCompany, 'workingHours', `wh_${targetCompany}`)).catch(() => null);
+              if (!defaultSnap || !defaultSnap.exists()) {
+                defaultSnap = await getDoc(doc(db, 'workingHours', `wh_${targetCompany}`)).catch(() => null);
+              }
               if (defaultSnap && defaultSnap.exists()) {
                 const defData = defaultSnap.data() as WorkingHoursConfig;
                 const cloned: WorkingHoursConfig = {
@@ -781,11 +901,11 @@ class DatabaseService {
                 };
                 this.memoryWorkingHours.set(docId, { config: cloned, timestamp: Date.now() });
                 this.setLocal(storageKey, cloned);
-                await setDoc(doc(db, 'workingHours', docId), cleanForFirestore(cloned)).catch(() => null);
+                await setDoc(doc(db, 'companies', targetCompany, 'workingHours', docId), cleanForFirestore(cloned)).catch(() => null);
                 return cloned;
               }
             } else {
-              await setDoc(doc(db, 'workingHours', docId), cleanForFirestore(cached)).catch(() => null);
+              await setDoc(doc(db, 'companies', targetCompany, 'workingHours', docId), cleanForFirestore(cached)).catch(() => null);
               this.memoryWorkingHours.set(docId, { config: cached, timestamp: Date.now() });
               this.setLocal(storageKey, cached);
               return cached;
@@ -808,7 +928,7 @@ class DatabaseService {
   }
 
   public async saveWorkingHours(config: WorkingHoursConfig, therapistId?: string, companyId?: string): Promise<void> {
-    const targetCompany = companyId || config.companyId || this.getActiveCompanyId();
+    const targetCompany = companyId || config.companyId || this.getActiveCompanyId() || 'comp_hovden';
     const targetTherapistId = therapistId || config.therapistId;
     const docId = targetTherapistId ? `wh_${targetTherapistId}` : `wh_${targetCompany}`;
     const storageKey = targetTherapistId ? `working_hours_${targetTherapistId}` : `working_hours_${targetCompany}`;
@@ -826,7 +946,8 @@ class DatabaseService {
 
     if (isFirebaseConfigured && db) {
       try {
-        await setDoc(doc(db, 'workingHours', docId), cleanConfig);
+        await setDoc(doc(db, 'companies', targetCompany, 'workingHours', docId), cleanConfig);
+        await deleteDoc(doc(db, 'workingHours', docId)).catch(() => null);
       } catch (e) {
         console.error(`Kunne ikke lagre arbeidstid (${docId}) til Firestore:`, e);
       }
@@ -842,7 +963,7 @@ class DatabaseService {
     const actualForceRefresh = isBool ? filterCompanyIdOrForceRefresh : forceRefresh;
     const filterCompanyId = isBool ? undefined : filterCompanyIdOrForceRefresh;
 
-    const target = filterCompanyId || this.getActiveCompanyId();
+    const target = filterCompanyId || this.getActiveCompanyId() || 'comp_hovden';
     const now = Date.now();
     if (!actualForceRefresh && this.memoryAppointments && (now - this.memoryAppointmentsTime < 10000)) {
       if (filterCompanyId === 'all') return this.memoryAppointments;
@@ -854,13 +975,38 @@ class DatabaseService {
     const fetchPromise = (async () => {
       if (isFirebaseConfigured && db) {
         try {
-          const appointmentsQuery = filterCompanyId === 'all'
-            ? collection(db, 'appointments')
-            : query(collection(db, 'appointments'), where('companyId', '==', target));
+          let apts: Appointment[] = [];
+          if (filterCompanyId === 'all') {
+            // Superadmin: Hent alle avtaler på tvers av alle bedrifter via collectionGroup
+            const snap = await getDocs(collectionGroup(db, 'appointments')).catch(() => null);
+            if (snap && !snap.empty) {
+              apts = snap.docs.map(d => ({ ...d.data(), id: d.id } as Appointment));
+            } else {
+              // Fallback til rot hvis ikke migrert enda
+              const rootSnap = await getDocs(collection(db, 'appointments')).catch(() => null);
+              if (rootSnap && !rootSnap.empty) {
+                apts = rootSnap.docs.map(d => ({ ...d.data(), id: d.id } as Appointment));
+              }
+            }
+          } else {
+            // Hent kun avtaler for denne spesifikke bedriften (strikt multi-tenant)
+            const snap = await getDocs(collection(db, 'companies', target, 'appointments')).catch(() => null);
+            if (snap && !snap.empty) {
+              apts = snap.docs.map(d => ({ ...d.data(), id: d.id } as Appointment));
+            } else {
+              // Sjekk om det ligger avtaler i rot for denne bedriften
+              const legacySnap = await getDocs(query(collection(db, 'appointments'), where('companyId', '==', target))).catch(() => null);
+              if (legacySnap && !legacySnap.empty) {
+                apts = legacySnap.docs.map(d => ({ ...d.data(), id: d.id } as Appointment));
+                for (const a of apts) {
+                  await setDoc(doc(db, 'companies', target, 'appointments', a.id), cleanForFirestore(a)).catch(() => null);
+                  await deleteDoc(doc(db, 'appointments', a.id)).catch(() => null);
+                }
+              }
+            }
+          }
 
-          const snap = await getDocs(appointmentsQuery);
-          if (!snap.empty) {
-            const apts = snap.docs.map(d => ({ ...d.data(), id: d.id } as Appointment));
+          if (apts.length > 0) {
             const existingAll = this.getLocal<Appointment[]>('appointments', []);
             let merged = [...existingAll];
             if (filterCompanyId === 'all') {
@@ -877,9 +1023,10 @@ class DatabaseService {
             }
             if (filterCompanyId === 'all') return merged;
             return merged.filter(a => a.companyId === target || (!a.companyId && target === 'comp_hovden'));
-          } else if (cached.length > 0) {
+          } else if (cached.length > 0 && filterCompanyId !== 'all') {
             for (const apt of cached) {
-              await setDoc(doc(db, 'appointments', apt.id), cleanForFirestore(apt));
+              const comp = apt.companyId || target;
+              await setDoc(doc(db, 'companies', comp, 'appointments', apt.id), cleanForFirestore(apt)).catch(() => null);
             }
           }
         } catch (e) {
@@ -902,10 +1049,38 @@ class DatabaseService {
   public async getAppointmentsByClient(clientId: string): Promise<Appointment[]> {
     if (isFirebaseConfigured && db) {
       try {
-        const q = query(collection(db, 'appointments'), where('clientId', '==', clientId));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          const apts = snap.docs.map(d => ({ ...d.data(), id: d.id } as Appointment));
+        const clientUser = await this.getUserById(clientId);
+        const compId = clientUser?.companyId || this.getActiveCompanyId() || 'comp_hovden';
+
+        // 1. Prøv subcollection under bedriften
+        let apts: Appointment[] = [];
+        const compQ = query(collection(db, 'companies', compId, 'appointments'), where('clientId', '==', clientId));
+        const compSnap = await getDocs(compQ).catch(() => null);
+
+        if (compSnap && !compSnap.empty) {
+          apts = compSnap.docs.map(d => ({ ...d.data(), id: d.id } as Appointment));
+        } else {
+          // 2. Prøv collectionGroup for å finne avtaler på tvers hvis klienten har byttet bedrift
+          const cgQ = query(collectionGroup(db, 'appointments'), where('clientId', '==', clientId));
+          const cgSnap = await getDocs(cgQ).catch(() => null);
+          if (cgSnap && !cgSnap.empty) {
+            apts = cgSnap.docs.map(d => ({ ...d.data(), id: d.id } as Appointment));
+          } else {
+            // 3. Fallback til rot dersom migrering ikke er fullført
+            const legacyQ = query(collection(db, 'appointments'), where('clientId', '==', clientId));
+            const legacySnap = await getDocs(legacyQ).catch(() => null);
+            if (legacySnap && !legacySnap.empty) {
+              apts = legacySnap.docs.map(d => ({ ...d.data(), id: d.id } as Appointment));
+              for (const apt of apts) {
+                const targetComp = apt.companyId || compId;
+                await setDoc(doc(db, 'companies', targetComp, 'appointments', apt.id), cleanForFirestore(apt)).catch(() => null);
+                await deleteDoc(doc(db, 'appointments', apt.id)).catch(() => null);
+              }
+            }
+          }
+        }
+
+        if (apts.length > 0) {
           const existing = this.getLocal<Appointment[]>('appointments', []);
           const merged = existing.filter(a => a.clientId !== clientId).concat(apts);
           this.setLocal('appointments', merged);
@@ -921,7 +1096,7 @@ class DatabaseService {
 
   public async saveAppointment(apt: Appointment): Promise<void> {
     if (!apt.companyId) {
-      apt.companyId = this.getActiveCompanyId();
+      apt.companyId = this.getActiveCompanyId() || 'comp_hovden';
     }
 
     const cleanApt = cleanForFirestore(apt);
@@ -939,7 +1114,8 @@ class DatabaseService {
 
     if (isFirebaseConfigured && db) {
       try {
-        await setDoc(doc(db, 'appointments', apt.id), cleanApt);
+        await setDoc(doc(db, 'companies', apt.companyId, 'appointments', apt.id), cleanApt);
+        await deleteDoc(doc(db, 'appointments', apt.id)).catch(() => null);
       } catch (e: any) {
         console.warn('Feil ved synkronisering av avtale til Firestore:', e);
       }
@@ -953,6 +1129,8 @@ class DatabaseService {
       apt.status = 'cancelled';
       apt.cancellationReason = reason || 'Avbestilt av bruker/admin';
       apt.updatedAt = new Date().toISOString();
+      const compId = apt.companyId || this.getActiveCompanyId() || 'comp_hovden';
+
       this.memoryAppointments = appointments;
       this.memoryAppointmentsTime = Date.now();
       this.setLocal('appointments', appointments);
@@ -960,7 +1138,8 @@ class DatabaseService {
 
       if (isFirebaseConfigured && db) {
         try {
-          await setDoc(doc(db, 'appointments', apt.id), cleanForFirestore(apt));
+          await setDoc(doc(db, 'companies', compId, 'appointments', apt.id), cleanForFirestore(apt));
+          await deleteDoc(doc(db, 'appointments', apt.id)).catch(() => null);
         } catch (e) {
           console.error('Kunne ikke oppdatere avbestilling i Firestore:', e);
         }
@@ -972,10 +1151,38 @@ class DatabaseService {
   public async getJournalsForClient(clientId: string): Promise<JournalEntry[]> {
     if (isFirebaseConfigured && db) {
       try {
-        const q = query(collection(db, 'journals'), where('clientId', '==', clientId));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          const clientJournals = snap.docs.map(d => ({ ...d.data(), id: d.id } as JournalEntry));
+        const clientUser = await this.getUserById(clientId);
+        const compId = clientUser?.companyId || this.getActiveCompanyId() || 'comp_hovden';
+
+        // 1. Sjekk subcollection under bedriften
+        let clientJournals: JournalEntry[] = [];
+        const compQ = query(collection(db, 'companies', compId, 'journals'), where('clientId', '==', clientId));
+        const compSnap = await getDocs(compQ).catch(() => null);
+
+        if (compSnap && !compSnap.empty) {
+          clientJournals = compSnap.docs.map(d => ({ ...d.data(), id: d.id } as JournalEntry));
+        } else {
+          // 2. Sjekk collectionGroup på tvers dersom klienten har byttet bedrift
+          const cgQ = query(collectionGroup(db, 'journals'), where('clientId', '==', clientId));
+          const cgSnap = await getDocs(cgQ).catch(() => null);
+          if (cgSnap && !cgSnap.empty) {
+            clientJournals = cgSnap.docs.map(d => ({ ...d.data(), id: d.id } as JournalEntry));
+          } else {
+            // 3. Fallback til rot for migrering
+            const legacyQ = query(collection(db, 'journals'), where('clientId', '==', clientId));
+            const legacySnap = await getDocs(legacyQ).catch(() => null);
+            if (legacySnap && !legacySnap.empty) {
+              clientJournals = legacySnap.docs.map(d => ({ ...d.data(), id: d.id } as JournalEntry));
+              for (const j of clientJournals) {
+                const targetComp = j.companyId || compId;
+                await setDoc(doc(db, 'companies', targetComp, 'journals', j.id), cleanForFirestore(j)).catch(() => null);
+                await deleteDoc(doc(db, 'journals', j.id)).catch(() => null);
+              }
+            }
+          }
+        }
+
+        if (clientJournals.length > 0) {
           const allCached = this.getLocal<JournalEntry[]>('journals', []);
           const others = allCached.filter(j => j.clientId !== clientId);
           this.setLocal('journals', [...others, ...clientJournals]);
@@ -994,7 +1201,7 @@ class DatabaseService {
 
   public async saveJournalEntry(entry: JournalEntry): Promise<void> {
     if (!entry.companyId) {
-      entry.companyId = this.getActiveCompanyId();
+      entry.companyId = this.getActiveCompanyId() || 'comp_hovden';
     }
 
     const all = this.getLocal<JournalEntry[]>('journals', []);
@@ -1008,7 +1215,8 @@ class DatabaseService {
 
     if (isFirebaseConfigured && db) {
       try {
-        await setDoc(doc(db, 'journals', entry.id), cleanForFirestore(entry));
+        await setDoc(doc(db, 'companies', entry.companyId, 'journals', entry.id), cleanForFirestore(entry));
+        await deleteDoc(doc(db, 'journals', entry.id)).catch(() => null);
       } catch (e) {
         console.error('Feil ved lagring av journal i Firestore:', e);
       }
@@ -1017,12 +1225,16 @@ class DatabaseService {
 
   public async deleteJournalEntry(id: string): Promise<void> {
     let all = this.getLocal<JournalEntry[]>('journals', []);
+    const entryToDelete = all.find(j => j.id === id);
+    const compId = entryToDelete?.companyId || this.getActiveCompanyId() || 'comp_hovden';
+
     all = all.filter(j => j.id !== id);
     this.setLocal('journals', all);
 
     if (isFirebaseConfigured && db) {
       try {
-        await deleteDoc(doc(db, 'journals', id));
+        await deleteDoc(doc(db, 'companies', compId, 'journals', id));
+        await deleteDoc(doc(db, 'journals', id)).catch(() => null);
       } catch (e) {
         console.error('Feil ved sletting av journal i Firestore:', e);
       }
@@ -1067,13 +1279,26 @@ class DatabaseService {
   }
 
   public async getSmsSettings(companyId?: string): Promise<SmsSettings> {
-    const target = companyId || this.getActiveCompanyId();
+    const target = companyId || this.getActiveCompanyId() || 'comp_hovden';
     const storageKey = `sms_settings_${target}`;
     const globalKey = this.getGlobalSmsApiKey();
 
     if (isFirebaseConfigured && db) {
       try {
-        const snap = await getDoc(doc(db, 'smsSettings', target));
+        // 1. Sjekk subcollection under bedriften
+        let snap = await getDoc(doc(db, 'companies', target, 'smsSettings', 'config'));
+        if (!snap.exists()) {
+          snap = await getDoc(doc(db, 'companies', target, 'smsSettings', target));
+        }
+        if (!snap.exists()) {
+          // 2. Fallback til rot
+          const rootSnap = await getDoc(doc(db, 'smsSettings', target));
+          if (rootSnap.exists()) {
+            snap = rootSnap;
+            await setDoc(doc(db, 'companies', target, 'smsSettings', 'config'), cleanForFirestore(rootSnap.data())).catch(() => null);
+          }
+        }
+
         if (snap.exists()) {
           const settings = snap.data() as SmsSettings;
           let changed = false;
@@ -1115,6 +1340,7 @@ class DatabaseService {
             sender: comp?.treatmentPlace || DEFAULT_SMS_SETTINGS.sender,
             treatmentPlace: comp?.treatmentPlace || comp?.name || 'Hovden'
           };
+          await setDoc(doc(db, 'companies', target, 'smsSettings', 'config'), cleanForFirestore(defaultSettings)).catch(() => null);
           await setDoc(doc(db, 'smsSettings', target), cleanForFirestore(defaultSettings)).catch(() => null);
           this.setLocal(storageKey, defaultSettings);
           return defaultSettings;
@@ -1129,12 +1355,13 @@ class DatabaseService {
   }
 
   public async saveSmsSettings(settings: SmsSettings, companyId?: string): Promise<void> {
-    const target = companyId || settings.companyId || this.getActiveCompanyId();
+    const target = companyId || settings.companyId || this.getActiveCompanyId() || 'comp_hovden';
     const updated = { ...settings, id: target, companyId: target };
     this.setLocal(`sms_settings_${target}`, updated);
     if (isFirebaseConfigured && db) {
       try {
-        await setDoc(doc(db, 'smsSettings', target), cleanForFirestore(updated));
+        await setDoc(doc(db, 'companies', target, 'smsSettings', 'config'), cleanForFirestore(updated));
+        await setDoc(doc(db, 'smsSettings', target), cleanForFirestore(updated)).catch(() => null);
       } catch (e) {
         console.error('Kunne ikke lagre SMS-innstillinger til Firestore:', e);
       }
@@ -1142,7 +1369,30 @@ class DatabaseService {
   }
 
   public async getSmsLogs(companyId?: string): Promise<SmsLog[]> {
-    const target = companyId || this.getActiveCompanyId();
+    const target = companyId || this.getActiveCompanyId() || 'comp_hovden';
+    if (isFirebaseConfigured && db) {
+      try {
+        let list: SmsLog[] = [];
+        if (companyId === 'all') {
+          const snap = await getDocs(collectionGroup(db, 'smsLogs')).catch(() => null);
+          if (snap && !snap.empty) {
+            snap.forEach(d => list.push(d.data() as SmsLog));
+          }
+        } else {
+          const snap = await getDocs(collection(db, 'companies', target, 'smsLogs')).catch(() => null);
+          if (snap && !snap.empty) {
+            snap.forEach(d => list.push(d.data() as SmsLog));
+          }
+        }
+        if (list.length > 0) {
+          list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          this.setLocal('sms_logs', list.slice(0, 200));
+          return list;
+        }
+      } catch (e) {
+        console.warn('Kunne ikke hente SMS-logger fra Firestore:', e);
+      }
+    }
     const all = this.getLocal<SmsLog[]>('sms_logs', []);
     if (companyId === 'all') return all;
     return all.filter(l => l.companyId === target || (!l.companyId && target === 'comp_hovden'));
@@ -1150,22 +1400,52 @@ class DatabaseService {
 
   public async logSms(log: SmsLog): Promise<void> {
     if (!log.companyId) {
-      log.companyId = this.getActiveCompanyId();
+      log.companyId = this.getActiveCompanyId() || 'comp_hovden';
     }
     const logs = this.getLocal<SmsLog[]>('sms_logs', []);
     logs.unshift(log);
     this.setLocal('sms_logs', logs.slice(0, 200));
+
+    if (isFirebaseConfigured && db) {
+      try {
+        await addDoc(collection(db, 'companies', log.companyId, 'smsLogs'), cleanForFirestore(log));
+      } catch (e) {
+        console.warn('Kunne ikke lagre SMS-logg i Firestore subcollection:', e);
+      }
+    }
   }
 
   // --- SMS MALER / STANDARDTEKSTER ---
   public async getSmsTemplates(companyId?: string): Promise<SmsTemplate[]> {
-    const target = companyId || this.getActiveCompanyId();
+    const target = companyId || this.getActiveCompanyId() || 'comp_hovden';
     if (isFirebaseConfigured && db) {
       try {
-        const snap = await getDocs(collection(db, 'smsTemplates'));
-        if (!snap.empty) {
-          const list: SmsTemplate[] = [];
-          snap.forEach(d => list.push(d.data() as SmsTemplate));
+        let list: SmsTemplate[] = [];
+        if (companyId === 'all') {
+          const snap = await getDocs(collectionGroup(db, 'smsTemplates')).catch(() => null);
+          if (snap && !snap.empty) {
+            snap.forEach(d => list.push(d.data() as SmsTemplate));
+          }
+        } else {
+          const snap = await getDocs(collection(db, 'companies', target, 'smsTemplates')).catch(() => null);
+          if (snap && !snap.empty) {
+            snap.forEach(d => list.push(d.data() as SmsTemplate));
+          } else {
+            // Sjekk rot for migrering
+            const rootSnap = await getDocs(collection(db, 'smsTemplates')).catch(() => null);
+            if (rootSnap && !rootSnap.empty) {
+              const allRoot: SmsTemplate[] = [];
+              rootSnap.forEach(d => allRoot.push(d.data() as SmsTemplate));
+              list = allRoot.filter(t => t.companyId === target || (!t.companyId && target === 'comp_hovden'));
+              for (const tpl of list) {
+                await setDoc(doc(db, 'companies', target, 'smsTemplates', tpl.id), cleanForFirestore(tpl)).catch(() => null);
+                await deleteDoc(doc(db, 'smsTemplates', tpl.id)).catch(() => null);
+              }
+            }
+          }
+        }
+
+        if (list.length > 0) {
           this.setLocal('sms_templates', list);
           if (companyId === 'all') return list;
           return list.filter(t => t.companyId === target || (!t.companyId && target === 'comp_hovden'));
@@ -1181,7 +1461,7 @@ class DatabaseService {
 
   public async saveSmsTemplate(template: SmsTemplate): Promise<void> {
     if (!template.companyId) {
-      template.companyId = this.getActiveCompanyId();
+      template.companyId = this.getActiveCompanyId() || 'comp_hovden';
     }
     const templates = this.getLocal<SmsTemplate[]>('sms_templates', DEFAULT_SMS_TEMPLATES);
     const index = templates.findIndex(t => t.id === template.id);
@@ -1193,7 +1473,8 @@ class DatabaseService {
     this.setLocal('sms_templates', templates);
     if (isFirebaseConfigured && db) {
       try {
-        await setDoc(doc(db, 'smsTemplates', template.id), cleanForFirestore(template));
+        await setDoc(doc(db, 'companies', template.companyId, 'smsTemplates', template.id), cleanForFirestore(template));
+        await deleteDoc(doc(db, 'smsTemplates', template.id)).catch(() => null);
       } catch (e) {
         console.error('Kunne ikke lagre SMS-mal i Firestore:', e);
       }
@@ -1202,11 +1483,15 @@ class DatabaseService {
 
   public async deleteSmsTemplate(id: string): Promise<void> {
     const templates = this.getLocal<SmsTemplate[]>('sms_templates', DEFAULT_SMS_TEMPLATES);
+    const targetTpl = templates.find(t => t.id === id);
+    const compId = targetTpl?.companyId || this.getActiveCompanyId() || 'comp_hovden';
+
     const filtered = templates.filter(t => t.id !== id);
     this.setLocal('sms_templates', filtered);
     if (isFirebaseConfigured && db) {
       try {
-        await deleteDoc(doc(db, 'smsTemplates', id));
+        await deleteDoc(doc(db, 'companies', compId, 'smsTemplates', id));
+        await deleteDoc(doc(db, 'smsTemplates', id)).catch(() => null);
       } catch (e) {
         console.error('Kunne ikke slette SMS-mal i Firestore:', e);
       }
@@ -1215,7 +1500,30 @@ class DatabaseService {
 
   // --- SYSTEMLOGG (AUDIT TRAIL) ---
   public async getSystemLogs(companyId?: string): Promise<SystemAuditLog[]> {
-    const target = companyId || this.getActiveCompanyId();
+    const target = companyId || this.getActiveCompanyId() || 'comp_hovden';
+    if (isFirebaseConfigured && db) {
+      try {
+        let list: SystemAuditLog[] = [];
+        if (companyId === 'all') {
+          const snap = await getDocs(collectionGroup(db, 'systemLogs')).catch(() => null);
+          if (snap && !snap.empty) {
+            snap.forEach(d => list.push(d.data() as SystemAuditLog));
+          }
+        } else {
+          const snap = await getDocs(collection(db, 'companies', target, 'systemLogs')).catch(() => null);
+          if (snap && !snap.empty) {
+            snap.forEach(d => list.push(d.data() as SystemAuditLog));
+          }
+        }
+        if (list.length > 0) {
+          list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          this.setLocal('system_logs', list.slice(0, 300));
+          return list;
+        }
+      } catch (e) {
+        console.warn('Kunne ikke hente systemlogger fra Firestore:', e);
+      }
+    }
     const all = this.getLocal<SystemAuditLog[]>('system_logs', []);
     if (companyId === 'all') return all;
     return all.filter(l => l.companyId === target || (!l.companyId && target === 'comp_hovden'));
@@ -1227,7 +1535,7 @@ class DatabaseService {
     details: string,
     companyId?: string
   ): Promise<void> {
-    const target = companyId || this.getActiveCompanyId();
+    const target = companyId || this.getActiveCompanyId() || 'comp_hovden';
     const logEntry: SystemAuditLog = {
       id: 'log_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
       companyId: target,
@@ -1245,9 +1553,9 @@ class DatabaseService {
 
     if (isFirebaseConfigured && db) {
       try {
-        await addDoc(collection(db, 'systemLogs'), cleanForFirestore(logEntry));
+        await addDoc(collection(db, 'companies', target, 'systemLogs'), cleanForFirestore(logEntry));
       } catch (e) {
-        console.warn('Kunne ikke skrive systemlogg til Firestore:', e);
+        console.warn('Kunne ikke skrive systemlogg til Firestore subcollection:', e);
       }
     }
   }
@@ -1261,7 +1569,7 @@ class DatabaseService {
     const actualForceRefresh = isBool ? filterCompanyIdOrForceRefresh : forceRefresh;
     const filterCompanyId = isBool ? undefined : filterCompanyIdOrForceRefresh;
 
-    const target = filterCompanyId || this.getActiveCompanyId();
+    const target = filterCompanyId || this.getActiveCompanyId() || 'comp_hovden';
     const now = Date.now();
     if (!actualForceRefresh && this.memoryHolidays && (now - this.memoryHolidaysTime < 10000)) {
       if (filterCompanyId === 'all') return this.memoryHolidays;
@@ -1273,9 +1581,31 @@ class DatabaseService {
     const fetchPromise = (async () => {
       if (isFirebaseConfigured && db) {
         try {
-          const snap = await getDocs(collection(db, 'holidays'));
-          if (!snap.empty) {
-            const holidays = snap.docs.map(d => ({ ...d.data(), id: d.id } as Holiday));
+          let holidays: Holiday[] = [];
+          if (filterCompanyId === 'all') {
+            const snap = await getDocs(collectionGroup(db, 'holidays')).catch(() => null);
+            if (snap && !snap.empty) {
+              holidays = snap.docs.map(d => ({ ...d.data(), id: d.id } as Holiday));
+            }
+          } else {
+            const snap = await getDocs(collection(db, 'companies', target, 'holidays')).catch(() => null);
+            if (snap && !snap.empty) {
+              holidays = snap.docs.map(d => ({ ...d.data(), id: d.id } as Holiday));
+            } else {
+              // Sjekk rot for migrering
+              const rootSnap = await getDocs(collection(db, 'holidays')).catch(() => null);
+              if (rootSnap && !rootSnap.empty) {
+                const rootList = rootSnap.docs.map(d => ({ ...d.data(), id: d.id } as Holiday));
+                holidays = rootList.filter(h => h.companyId === target || (!h.companyId && target === 'comp_hovden'));
+                for (const h of holidays) {
+                  await setDoc(doc(db, 'companies', target, 'holidays', h.id), cleanForFirestore(h)).catch(() => null);
+                  await deleteDoc(doc(db, 'holidays', h.id)).catch(() => null);
+                }
+              }
+            }
+          }
+
+          if (holidays.length > 0) {
             const hasChanged = JSON.stringify(holidays) !== JSON.stringify(this.memoryHolidays);
             this.memoryHolidays = holidays;
             this.memoryHolidaysTime = Date.now();
@@ -1305,7 +1635,7 @@ class DatabaseService {
 
   public async saveHoliday(holiday: Holiday): Promise<void> {
     if (!holiday.companyId) {
-      holiday.companyId = this.getActiveCompanyId();
+      holiday.companyId = this.getActiveCompanyId() || 'comp_hovden';
     }
     const cleanHoliday = cleanForFirestore(holiday);
     const holidays = [...this.getCachedHolidays('all')];
@@ -1322,7 +1652,8 @@ class DatabaseService {
 
     if (isFirebaseConfigured && db) {
       try {
-        await setDoc(doc(db, 'holidays', holiday.id), cleanHoliday);
+        await setDoc(doc(db, 'companies', holiday.companyId, 'holidays', holiday.id), cleanHoliday);
+        await deleteDoc(doc(db, 'holidays', holiday.id)).catch(() => null);
       } catch (e) {
         console.error('Kunne ikke lagre ferie til Firestore:', e);
       }
@@ -1330,7 +1661,11 @@ class DatabaseService {
   }
 
   public async deleteHoliday(holidayId: string): Promise<void> {
-    const holidays = this.getCachedHolidays('all').filter(h => h.id !== holidayId);
+    const all = this.getCachedHolidays('all');
+    const hol = all.find(h => h.id === holidayId);
+    const compId = hol?.companyId || this.getActiveCompanyId() || 'comp_hovden';
+
+    const holidays = all.filter(h => h.id !== holidayId);
     this.memoryHolidays = holidays;
     this.memoryHolidaysTime = Date.now();
     this.setLocal('holidays', holidays);
@@ -1338,7 +1673,8 @@ class DatabaseService {
 
     if (isFirebaseConfigured && db) {
       try {
-        await deleteDoc(doc(db, 'holidays', holidayId));
+        await deleteDoc(doc(db, 'companies', compId, 'holidays', holidayId));
+        await deleteDoc(doc(db, 'holidays', holidayId)).catch(() => null);
       } catch (e) {
         console.error('Kunne ikke slette ferie fra Firestore:', e);
       }
