@@ -10,6 +10,10 @@ service cloud.firestore {
       allow read, write: if true;
 
       // Sub-collections under hver bedrift (Tenant-isolert)
+      match /users/{userId} {
+        allow read, write: if true;
+      }
+
       match /appointments/{appointmentId} {
         allow read, write: if true;
       }

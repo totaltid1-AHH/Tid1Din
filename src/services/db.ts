@@ -649,7 +649,18 @@ class DatabaseService {
         }
       }
 
-      // 6. SMS-Innstillinger -> /companies/{companyId}/smsSettings/config
+      // 6. Klienter, terapeuter og administratorer -> /companies/{companyId}/users/{id}
+      const rootUsersSnap = await getDocs(collection(db, 'users')).catch(() => null);
+      if (rootUsersSnap && !rootUsersSnap.empty) {
+        for (const docSnap of rootUsersSnap.docs) {
+          const u = docSnap.data() as UserProfile;
+          if (u.companyId && u.role !== 'superadmin') {
+            await setDoc(doc(db, 'companies', u.companyId, 'users', docSnap.id), cleanForFirestore(u)).catch(() => null);
+          }
+        }
+      }
+
+      // 7. SMS-Innstillinger -> /companies/{companyId}/smsSettings/config
       const rootSmsSnap = await getDocs(collection(db, 'smsSettings')).catch(() => null);
       if (rootSmsSnap && !rootSmsSnap.empty) {
         for (const docSnap of rootSmsSnap.docs) {
@@ -739,11 +750,26 @@ class DatabaseService {
     const actualForceRefresh = isBool ? filterCompanyIdOrForceRefresh : forceRefresh;
     const filterCompanyId = isBool ? undefined : filterCompanyIdOrForceRefresh;
 
-    const all = await this.getAllUsers(actualForceRefresh);
     if (filterCompanyId === 'all') {
-      return all;
+      return await this.getAllUsers(actualForceRefresh);
     }
-    const target = filterCompanyId || this.getActiveCompanyId();
+
+    const target = filterCompanyId || this.getActiveCompanyId() || 'comp_hovden';
+
+    if (isFirebaseConfigured && db) {
+      try {
+        const snap = await getDocs(collection(db, 'companies', target, 'users')).catch(() => null);
+        if (snap && !snap.empty) {
+          const compUsers = snap.docs.map(d => d.data() as UserProfile);
+          const cleaned = this.sanitizeUsers(compUsers);
+          return cleaned;
+        }
+      } catch (e) {
+        console.warn('Kunne ikke hente bedriftsbrukere fra subcollection:', e);
+      }
+    }
+
+    const all = await this.getAllUsers(actualForceRefresh);
     return all.filter(u => u.companyId === target || (!u.companyId && target === 'comp_hovden'));
   }
 
@@ -782,7 +808,13 @@ class DatabaseService {
 
     if (isFirebaseConfigured && db) {
       try {
+        // Lagre i rot for global innlogging og autentiseringsruting
         await setDoc(doc(db, 'users', user.uid), cleanUser);
+
+        // Lagre i subcollection under bedriften for komplett multi-tenant organisering
+        if (user.companyId && user.role !== 'superadmin') {
+          await setDoc(doc(db, 'companies', user.companyId, 'users', user.uid), cleanUser);
+        }
       } catch (e) {
         console.error('Kunne ikke lagre til Firestore:', e);
       }
@@ -790,14 +822,20 @@ class DatabaseService {
   }
 
   public async deleteUser(uid: string): Promise<void> {
-    const users = this.getCachedAllUsers().filter(u => u.uid !== uid);
-    this.memoryUsers = users;
+    const users = this.getCachedAllUsers();
+    const userToDelete = users.find(u => u.uid === uid);
+    const updatedUsers = users.filter(u => u.uid !== uid);
+
+    this.memoryUsers = updatedUsers;
     this.memoryUsersTime = Date.now();
-    this.setLocal('users', users);
+    this.setLocal('users', updatedUsers);
     this.notifyDataUpdated('users');
 
     if (isFirebaseConfigured && db) {
       try {
+        if (userToDelete?.companyId && userToDelete.role !== 'superadmin') {
+          await deleteDoc(doc(db, 'companies', userToDelete.companyId, 'users', uid)).catch(() => null);
+        }
         await deleteDoc(doc(db, 'users', uid));
       } catch (e) {
         console.error('Kunne ikke slette fra Firestore:', e);
