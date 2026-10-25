@@ -286,30 +286,18 @@ export const BookingView: React.FC<BookingViewProps> = ({
     return false;
   };
 
-  // Kollisjon for behandler (overlapp med avtale for en ANNEN klient)
+  // Kollisjon for behandler (overlapp med avtale for behandler)
   const therapistCollision = dayAppointments.find(a => {
-    // Dersom avtalen er for samme klient som det bestilles time for, skal det IKKE varsles om kollisjon
-    if (isAppointmentForTargetClient(a)) return false;
+    if (a.status === 'cancelled') return false;
     const aStart = parseMinutes(a.startTime);
     const aEnd = parseMinutes(a.endTime);
     return startMin < aEnd && endMin > aStart;
   });
 
-  // Kollisjon for klient (dersom klienten har avtale hos en ANNEN behandler på samme tid)
+  // Kollisjon for klient (dersom klienten har avtale på samme tid)
   const clientCollision = appointments.find(a => {
     if (a.date !== selectedDateStr || a.status === 'cancelled') return false;
     if (!targetClientId || !isAppointmentForTargetClient(a)) return false;
-    const aTherapistId = a.therapistId || therapists[0]?.uid;
-    // Avtale hos samme behandler er ikke en klientkollisjon med en annen time
-    if (aTherapistId === selectedTherapistId) return false;
-    const aStart = parseMinutes(a.startTime);
-    const aEnd = parseMinutes(a.endTime);
-    return startMin < aEnd && endMin > aStart;
-  });
-
-  // Eksisterende avtale for samme klient hos denne behandleren i valgt tidsrom
-  const existingSameClientApt = dayAppointments.find(a => {
-    if (!isAppointmentForTargetClient(a)) return false;
     const aStart = parseMinutes(a.startTime);
     const aEnd = parseMinutes(a.endTime);
     return startMin < aEnd && endMin > aStart;
@@ -478,21 +466,9 @@ export const BookingView: React.FC<BookingViewProps> = ({
     const now = new Date();
     const targetStartDateTime = new Date(`${selectedDateStr}T${startTime}`);
 
-    if (existingSameClientApt) {
-      const existingEnd = new Date(`${existingSameClientApt.date}T${existingSameClientApt.endTime}`);
-      if (existingEnd < now) {
-        alert('Tidligere eller gjennomførte timer kan ikke endres.');
-        return;
-      }
-      if (targetStartDateTime < now) {
-        alert('Det er ikke mulig å flytte en avtale tilbake i tid. Vennligst velg et fremtidig tidspunkt.');
-        return;
-      }
-    } else {
-      if (targetStartDateTime < now) {
-        alert('Det er ikke mulig å opprette avtaler tilbake i tid. Vennligst velg et fremtidig tidspunkt.');
-        return;
-      }
+    if (targetStartDateTime < now) {
+      alert('Det er ikke mulig å opprette avtaler tilbake i tid. Vennligst velg et fremtidig tidspunkt.');
+      return;
     }
 
     setIsSubmittingBooking(true);
@@ -502,70 +478,38 @@ export const BookingView: React.FC<BookingViewProps> = ({
       if (durationMinutes > 120) slotType = 'triple';
       else if (durationMinutes > 60) slotType = 'double';
 
-      let savedApt: Appointment;
-      if (existingSameClientApt) {
-        const meetingLink = isOnlineMeeting 
-          ? (existingSameClientApt.meetingLink || smsService.generateMeetingLink(existingSameClientApt.id)) 
-          : undefined;
+      const appointmentId = 'apt_' + Date.now();
+      const meetingLink = isOnlineMeeting ? smsService.generateMeetingLink(appointmentId) : undefined;
 
-        savedApt = {
-          ...existingSameClientApt,
-          clientId: clientObj.uid,
-          clientNumber: clientObj.customerNumber || 1000,
-          clientName: clientObj.displayName,
-          clientPhone: finalPhone || existingSameClientApt.clientPhone || '',
-          clientEmail: clientObj.email || existingSameClientApt.clientEmail || '',
-          startTime,
-          endTime,
-          durationMinutes,
-          slotType,
-          price,
-          isOnline: isOnlineMeeting,
-          meetingLink,
-          notes: bookingNotes || existingSameClientApt.notes,
-          updatedAt: new Date().toISOString()
-        };
-        await dbService.saveAppointment(savedApt);
+      const savedApt: Appointment = {
+        id: appointmentId,
+        companyId: clientObj.companyId || currentUser?.companyId || dbService.getActiveCompanyId(),
+        clientId: clientObj.uid,
+        clientNumber: clientObj.customerNumber || 1000,
+        clientName: clientObj.displayName,
+        clientPhone: finalPhone,
+        clientEmail: clientObj.email || '',
+        therapistId: selectedTherapist?.uid,
+        therapistName: formatTherapistName(selectedTherapist?.displayName),
+        date: selectedDateStr,
+        startTime,
+        endTime,
+        durationMinutes,
+        slotType,
+        price,
+        isOnline: isOnlineMeeting,
+        ...(meetingLink ? { meetingLink } : {}),
+        status: 'confirmed',
+        ...(bookingNotes ? { notes: bookingNotes } : {}),
+        createdAt: new Date().toISOString()
+      };
+      await dbService.saveAppointment(savedApt);
 
-        await dbService.logAction(
-          { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
-          'update_appointment',
-          `Oppdaterte time hos ${selectedTherapist?.displayName || 'terapeut'} for ${clientObj.displayName} den ${savedApt.date} kl. ${savedApt.startTime}–${savedApt.endTime}`
-        );
-      } else {
-        const appointmentId = 'apt_' + Date.now();
-        const meetingLink = isOnlineMeeting ? smsService.generateMeetingLink(appointmentId) : undefined;
-
-        savedApt = {
-          id: appointmentId,
-          companyId: clientObj.companyId || currentUser?.companyId || dbService.getActiveCompanyId(),
-          clientId: clientObj.uid,
-          clientNumber: clientObj.customerNumber || 1000,
-          clientName: clientObj.displayName,
-          clientPhone: finalPhone,
-          clientEmail: clientObj.email || '',
-          therapistId: selectedTherapist?.uid,
-          therapistName: formatTherapistName(selectedTherapist?.displayName),
-          date: selectedDateStr,
-          startTime,
-          endTime,
-          durationMinutes,
-          slotType,
-          price,
-          isOnline: isOnlineMeeting,
-          ...(meetingLink ? { meetingLink } : {}),
-          status: 'confirmed',
-          ...(bookingNotes ? { notes: bookingNotes } : {}),
-          createdAt: new Date().toISOString()
-        };
-        await dbService.saveAppointment(savedApt);
-
-        await dbService.logAction(
-          { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
-          'create_appointment',
-          `Bestilte time hos ${selectedTherapist?.displayName || 'terapeut'} for ${clientObj.displayName} den ${savedApt.date} kl. ${savedApt.startTime}–${savedApt.endTime}`
-        );
-      }
+      await dbService.logAction(
+        { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
+        'create_appointment',
+        `Bestilte time hos ${selectedTherapist?.displayName || 'terapeut'} for ${clientObj.displayName} den ${savedApt.date} kl. ${savedApt.startTime}–${savedApt.endTime}`
+      );
 
       // Send bekreftelse dersom avhuket
       let smsResult: any = null;
@@ -1106,21 +1050,6 @@ export const BookingView: React.FC<BookingViewProps> = ({
               )}
             </div>
 
-            {/* Info dersom avtalen oppdaterer en eksisterende avtale for samme klient */}
-            {existingSameClientApt && (
-              <div className="p-3.5 rounded-xl bg-sky-50 border border-sky-300 text-sky-950 text-xs flex items-start gap-2.5">
-                <CheckCircle2 className="w-4 h-4 text-sky-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold text-sky-900">
-                    Oppdaterer eksisterende avtale
-                  </p>
-                  <p className="text-sky-800 mt-0.5">
-                    Det er allerede registrert en avtale fra kl. <strong>{existingSameClientApt.startTime}</strong> til <strong>{existingSameClientApt.endTime}</strong> for denne klienten. Bestillingen vil oppdatere denne avtalen.
-                  </p>
-                </div>
-              </div>
-            )}
-
             {/* OVERLAPP-ADVARSEL */}
             {therapistCollision && (
               <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-950 text-xs flex items-start gap-2.5">
@@ -1174,14 +1103,10 @@ export const BookingView: React.FC<BookingViewProps> = ({
                   !isValidTimeString(endTime) ||
                   durationMinutes <= 0 || 
                   Boolean(therapistCollision || clientCollision) ||
-                  (!existingSameClientApt && (new Date(`${selectedDateStr}T${startTime}`) < new Date()))
+                  (new Date(`${selectedDateStr}T${startTime}`) < new Date())
                 }
                 onClick={handleConfirmBooking}
-                className={`w-full py-3 px-4 rounded-xl text-white font-bold text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                  existingSameClientApt
-                    ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20 active:scale-98'
-                    : 'bg-sky-600 hover:bg-sky-700 shadow-sky-600/20 active:scale-98'
-                }`}
+                className="w-full py-3 px-4 rounded-xl text-white font-bold text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-sky-600 hover:bg-sky-700 shadow-sky-600/20 active:scale-98"
               >
                 {isSubmittingBooking ? (
                   <>
@@ -1192,9 +1117,7 @@ export const BookingView: React.FC<BookingViewProps> = ({
                   <>
                     <Check className="w-4 h-4" />
                     <span>
-                      {existingSameClientApt
-                        ? `Lagre endring (kl. ${startTime} – ${endTime})`
-                        : `Bekreft timebestilling (kl. ${startTime} – ${endTime})`}
+                      {`Bekreft timebestilling (kl. ${startTime} – ${endTime})`}
                     </span>
                   </>
                 )}

@@ -283,12 +283,10 @@ export const CalendarView: React.FC = () => {
   const bookingStartMin = parseMinutes(bookingStartTime);
   const bookingEndMin = parseMinutes(bookingEndTime);
 
-  // Kollisjonssjekk for behandler (overlappende tidsrom med eksisterende bekreftet avtale for en ANNEN person)
+  // Kollisjonssjekk for behandler (overlappende tidsrom med eksisterende bekreftet avtale)
   const therapistCollision = appointments.find(a => {
     if (a.date !== selectedDateStr || a.status === 'cancelled') return false;
     if (editingAppointmentId && a.id === editingAppointmentId) return false;
-    // Dersom avtalen er for samme person som det bestilles time for, skal det IKKE varsles om kollisjon
-    if (isAppointmentForCurrentClient(a)) return false;
     const aTherapistId = a.therapistId || therapists[0]?.uid;
     if (aTherapistId !== selectedTherapistId) return false;
     const aStart = parseMinutes(a.startTime);
@@ -296,31 +294,15 @@ export const CalendarView: React.FC = () => {
     return bookingStartMin < aEnd && bookingEndMin > aStart;
   });
 
-  // Kollisjonssjekk for klient (klienten kan ikke bookes inn på to timer samtidig hos EN ANNEN behandler)
+  // Kollisjonssjekk for klient (klienten kan ikke bookes inn på to timer samtidig)
   const clientCollision = appointments.find(a => {
     if (a.date !== selectedDateStr || a.status === 'cancelled') return false;
     if (editingAppointmentId && a.id === editingAppointmentId) return false;
     if (!isAppointmentForCurrentClient(a)) return false;
-    const aTherapistId = a.therapistId || therapists[0]?.uid;
-    // Dersom timen er hos den samme behandleren, er det denne avtalen som oppdateres/avtales (ikke en kollisjon hos annen behandler)
-    if (aTherapistId === selectedTherapistId) return false;
     const aStart = parseMinutes(a.startTime);
     const aEnd = parseMinutes(a.endTime);
     return bookingStartMin < aEnd && bookingEndMin > aStart;
   });
-
-  // Eksisterende avtale for samme person hos denne behandleren i valgt tidsrom
-  const existingSameClientApt = editingAppointmentId
-    ? appointments.find(a => a.id === editingAppointmentId)
-    : appointments.find(a => {
-        if (a.date !== selectedDateStr || a.status === 'cancelled') return false;
-        const aTherapistId = a.therapistId || therapists[0]?.uid;
-        if (aTherapistId !== selectedTherapistId) return false;
-        if (!isAppointmentForCurrentClient(a)) return false;
-        const aStart = parseMinutes(a.startTime);
-        const aEnd = parseMinutes(a.endTime);
-        return bookingStartMin < aEnd && bookingEndMin > aStart;
-      });
 
   const getSmartInitialStartTime = (dayStr: string, therapistId: string, durMin: number): string => {
     const dayApts = appointments.filter(a => 
@@ -556,7 +538,7 @@ export const CalendarView: React.FC = () => {
 
     const activeEditingApt = editingAppointmentId 
       ? appointments.find(a => a.id === editingAppointmentId) 
-      : existingSameClientApt;
+      : null;
 
     if (activeEditingApt) {
       const existingEnd = new Date(`${activeEditingApt.date}T${activeEditingApt.endTime}`);
@@ -1431,7 +1413,7 @@ export const CalendarView: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                       <Clock className="w-3.5 h-3.5 text-sky-600" />
-                      <span>{editingAppointmentId || existingSameClientApt ? 'Endre avtale' : 'Avtal time'}</span>
+                      <span>{editingAppointmentId ? 'Endre avtale' : 'Avtal time'}</span>
                     </h4>
                     {editingAppointmentId && (
                       <button
@@ -1660,19 +1642,6 @@ export const CalendarView: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Info om eksisterende avtale for samme klient i dette tidsrommet */}
-                  {existingSameClientApt && !editingAppointmentId && (
-                    <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-300 text-sky-950 text-xs flex items-start gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-sky-600 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <span className="font-bold block">Oppdaterer eksisterende avtale</span>
-                        <span>
-                          {canViewName ? existingSameClientApt.clientName : `Klient #${existingSameClientApt.clientNumber || 1000}`} har allerede en avtale i dette tidsrommet (kl. {existingSameClientApt.startTime}–{existingSameClientApt.endTime}). Bestillingen vil oppdatere denne avtalen.
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
                   {/* Kollisjonsvarsel dersom tidspunkt overlapper */}
                   {therapistCollision && (
                     <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 text-xs flex items-start gap-2">
@@ -1727,11 +1696,11 @@ export const CalendarView: React.FC = () => {
                   !isValidTimeString(bookingEndTime) ||
                   calculateDurationMinutes(bookingStartTime, bookingEndTime) <= 0 ||
                   Boolean(therapistCollision || clientCollision) ||
-                  (!editingAppointmentId && !existingSameClientApt && (new Date(`${selectedDateStr}T${bookingStartTime}`) < new Date()))
+                  (!editingAppointmentId && (new Date(`${selectedDateStr}T${bookingStartTime}`) < new Date()))
                 }
                 onClick={handleConfirmBooking}
                 className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
-                  editingAppointmentId || existingSameClientApt
+                  editingAppointmentId
                     ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/20'
                     : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/20'
                 }`}
@@ -1745,7 +1714,7 @@ export const CalendarView: React.FC = () => {
                   <>
                     <Check className="w-4 h-4 flex-shrink-0" />
                     <span className="truncate">
-                      {editingAppointmentId || existingSameClientApt
+                      {editingAppointmentId
                         ? `Lagre endring (kl. ${bookingStartTime} – ${bookingEndTime})` 
                         : `Bekreft time (kl. ${bookingStartTime} – ${bookingEndTime})`}
                     </span>

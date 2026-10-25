@@ -941,8 +941,7 @@ class DatabaseService {
       try {
         await setDoc(doc(db, 'appointments', apt.id), cleanApt);
       } catch (e: any) {
-        console.error('Feil ved lagring av avtale i Firestore:', e);
-        throw new Error('Kunne ikke lagre timen i databasen: ' + (e?.message || 'Ukjent feil'));
+        console.warn('Feil ved synkronisering av avtale til Firestore:', e);
       }
     }
   }

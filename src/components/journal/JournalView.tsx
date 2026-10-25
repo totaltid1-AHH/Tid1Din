@@ -47,7 +47,7 @@ import {
 import { format, addDays } from 'date-fns';
 import { nb } from 'date-fns/locale';
 import { AppointmentSmsModal } from '../appointments/AppointmentSmsModal';
-import { generateTimeOptions, isValidTimeString } from '../../utils/calendar';
+import { generateTimeOptions, isValidTimeString, parseMinutes } from '../../utils/calendar';
 import { smsService } from '../../services/sms';
 
 interface JournalViewProps {
@@ -662,49 +662,63 @@ export const JournalView: React.FC<JournalViewProps> = ({
             return;
           }
 
-          const nextApt: Appointment = {
-            id: 'apt_' + Date.now(),
-            companyId: targetCompany,
-            clientId: selectedClient.uid,
-            clientNumber: selectedClient.customerNumber || 1000,
-            clientName: selectedClient.displayName,
-            clientPhone: selectedClient.phone || '',
-            clientEmail: selectedClient.email || '',
-            therapistId: currentUser.uid,
-            therapistName: currentUser.displayName,
-            date: nextDate,
-            startTime: nextStartTime,
-            endTime: nextEndTime || calculateEndTime(nextStartTime, 45),
-            durationMinutes: 45,
-            slotType: 'single',
-            price: 950,
-            isOnline: nextIsOnline,
-            status: 'confirmed',
-            notes: nextNotes || 'Avtalt ved avslutning av forrige samtale',
-            createdAt: now
-          };
+          const targetEndTime = nextEndTime || calculateEndTime(nextStartTime, 45);
+          const nextStartMin = parseMinutes(nextStartTime);
+          const nextEndMin = parseMinutes(targetEndTime);
+          const nextCollision = appointments.find(a => {
+            if (a.date !== nextDate || a.status === 'cancelled') return false;
+            const aStart = parseMinutes(a.startTime);
+            const aEnd = parseMinutes(a.endTime);
+            return nextStartMin < aEnd && nextEndMin > aStart;
+          });
 
-          await dbService.saveAppointment(nextApt);
+          if (nextCollision) {
+            alert(`Journalnotat ble lagret, men neste time kl. ${nextStartTime}–${targetEndTime} overlapper med en eksisterende avtale (kl. ${nextCollision.startTime}–${nextCollision.endTime}). Vennligst sett opp timen i kalenderen.`);
+          } else {
+            const nextApt: Appointment = {
+              id: 'apt_' + Date.now(),
+              companyId: targetCompany,
+              clientId: selectedClient.uid,
+              clientNumber: selectedClient.customerNumber || 1000,
+              clientName: selectedClient.displayName,
+              clientPhone: selectedClient.phone || '',
+              clientEmail: selectedClient.email || '',
+              therapistId: currentUser.uid,
+              therapistName: currentUser.displayName,
+              date: nextDate,
+              startTime: nextStartTime,
+              endTime: targetEndTime,
+              durationMinutes: 45,
+              slotType: 'single',
+              price: 950,
+              isOnline: nextIsOnline,
+              status: 'confirmed',
+              notes: nextNotes || 'Avtalt ved avslutning av forrige samtale',
+              createdAt: now
+            };
 
-          // Send SMS bekreftelse dersom avhuket
-          if (sendNextAptSms) {
-            try {
-              await Promise.race([
-                smsService.sendBookingConfirmation(nextApt),
-                new Promise<null>((_, reject) => setTimeout(() => reject(new Error('SMS timeout')), 3500))
-              ]);
-            } catch (err) {
-              console.warn('SMS-sending feilet:', err);
+            await dbService.saveAppointment(nextApt);
+
+            // Send SMS bekreftelse dersom avhuket
+            if (sendNextAptSms) {
+              try {
+                await Promise.race([
+                  smsService.sendBookingConfirmation(nextApt),
+                  new Promise<null>((_, reject) => setTimeout(() => reject(new Error('SMS timeout')), 3500))
+                ]);
+              } catch (err) {
+                console.warn('SMS-sending feilet:', err);
+              }
             }
+
+            await dbService.logAction(
+              { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
+              'create_appointment',
+              `Avtalte neste time for ${selectedClient.displayName} den ${nextApt.date} kl. ${nextApt.startTime}`
+            );
+
+            setSaveFeedback(`Journalnotat lagret & neste time er avtalt for ${safeFormatDate(nextDate + 'T12:00:00', 'd. MMMM', nextDate)} kl. ${nextStartTime}!${sendNextAptSms ? ' (Bekreftelse sendt)' : ''}`);
           }
-
-          await dbService.logAction(
-            { uid: currentUser.uid, email: currentUser.email, role: currentUser.role },
-            'create_appointment',
-            `Avtalte neste time for ${selectedClient.displayName} den ${nextApt.date} kl. ${nextApt.startTime}`
-          );
-
-          setSaveFeedback(`Journalnotat lagret & neste time er avtalt for ${safeFormatDate(nextDate + 'T12:00:00', 'd. MMMM', nextDate)} kl. ${nextStartTime}!${sendNextAptSms ? ' (Bekreftelse sendt)' : ''}`);
         } else {
           setSaveFeedback('Nytt journalnotat ble lagret og kryptert!');
         }
@@ -744,6 +758,18 @@ export const JournalView: React.FC<JournalViewProps> = ({
 
     try {
       const finalEndTime = newAptEndTime || calculateEndTime(newAptTime, 45);
+      const newStartMin = parseMinutes(newAptTime);
+      const newEndMin = parseMinutes(finalEndTime);
+      const collision = appointments.find(a => {
+        if (a.date !== newAptDate || a.status === 'cancelled') return false;
+        const aStart = parseMinutes(a.startTime);
+        const aEnd = parseMinutes(a.endTime);
+        return newStartMin < aEnd && newEndMin > aStart;
+      });
+      if (collision) {
+        alert(`Kan ikke opprette time: Tidspunktet kl. ${newAptTime}–${finalEndTime} overlapper med en eksisterende avtale (kl. ${collision.startTime}–${collision.endTime}). Vennligst velg et annet tidspunkt.`);
+        return;
+      }
 
       const newAppointment: Appointment = {
         id: 'apt_' + Date.now(),
